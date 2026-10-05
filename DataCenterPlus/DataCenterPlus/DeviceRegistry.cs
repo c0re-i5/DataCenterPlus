@@ -28,6 +28,7 @@ namespace DataCenterPlus
             internal float      SpeedGbps;     // for SFP / net labels
             internal float      TargetIops;    // for servers (0 = n/a)
             internal int        ModuleId;      // for SFP boxes: the SFP module type they dispense
+            internal int        ShopItemType;  // ObjectInHand value to use for the shop item
         }
 
         private static readonly Dictionary<int, Entry> _entries = new();

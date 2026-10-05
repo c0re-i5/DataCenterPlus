@@ -17,6 +17,28 @@ namespace DataCenterPlus
         internal int   sfpType;
     }
 
+    // Explicit click handler for our injected shop buttons. We can't rely on the
+    // vanilla button wiring (it differs by game version), so we drive the buy directly.
+    public class ShopButtonHandler : MonoBehaviour
+    {
+        public ShopButtonHandler(IntPtr ptr) : base(ptr) { }
+        internal ComputerShop shop;
+        internal int itemID;
+        internal int price;
+        internal PlayerManager.ObjectInHand itemType;
+        internal string displayName;
+        private float _lastFire;
+
+        public void OnClick()
+        {
+            if (shop == null) return;
+            float now = Time.unscaledTime;
+            if (now - _lastFire < 0.3f) return;   // debounce double-fire (click + select)
+            _lastFire = now;
+            shop.ButtonBuyShopItem(itemID, price, itemType, displayName, false);
+        }
+    }
+
     // Injected helper for cart +/- buttons (IL2CPP UnityAction can't bind lambdas).
     public class CartButtonHandler : MonoBehaviour
     {

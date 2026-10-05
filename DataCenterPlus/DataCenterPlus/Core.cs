@@ -1,4 +1,5 @@
 using Il2Cpp;
+using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using Il2CppInterop.Runtime.Injection;
 using MelonLoader;
@@ -6,7 +7,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
 
-[assembly: MelonInfo(typeof(DataCenterPlus.Core), "DataCenterPlus", "1.0.0", "brzb0 + contributors")]
+[assembly: MelonInfo(typeof(DataCenterPlus.Core), "DataCenterPlus", "1.0.1", "brzb0 + contributors")]
 [assembly: MelonGame("Waseku", "Data Center")]
 
 namespace DataCenterPlus
@@ -16,12 +17,12 @@ namespace DataCenterPlus
         internal static int    BaseSwitchType  = -1;   // index of the top QSFP+ switch
         internal static int    BaseSfpType     = -1;   // index of a base SFP transceiver
         internal static int    BaseSfpBoxType  = -1;   // index of a base SFP box (5-pack)
-        internal static Sprite BaseSwitchSprite;
         internal static GameObject TemplateHolder { get; private set; }
 
         public override void OnInitializeMelon()
         {
             ClassInjector.RegisterTypeInIl2Cpp<CartButtonHandler>();
+            ClassInjector.RegisterTypeInIl2Cpp<ShopButtonHandler>();
             ClassInjector.RegisterTypeInIl2Cpp<DcpPackTag>();
         }
 
@@ -39,7 +40,26 @@ namespace DataCenterPlus
             SetupNetworking(mgm);
             SetupServers(mgm);
             SetupSfp(mgm);
+
+            int nSwitch = 0, nRouter = 0, nFire = 0, nServer = 0, nSfp = 0, nBox = 0;
+            foreach (var kv in DeviceRegistry.Entries)
+                switch (kv.Value.Kind)
+                {
+                    case DeviceKind.Switch: nSwitch++; break;
+                    case DeviceKind.Router: nRouter++; break;
+                    case DeviceKind.Firewall: nFire++; break;
+                    case DeviceKind.Server: nServer++; break;
+                    case DeviceKind.Sfp: nSfp++; break;
+                    case DeviceKind.SfpBox: nBox++; break;
+                }
+            MelonLogger.Msg($"DataCenterPlus: arrays — switches={Len(mgm.switchesPrefabs)} routers={Len(mgm.routersPrefabs)} " +
+                            $"firewalls={Len(mgm.firewallsPrefabs)} servers={Len(mgm.serverPrefabs)} " +
+                            $"sfp={Len(mgm.sfpPrefabs)} sfpBoxes={Len(mgm.sfpsBoxedPrefab)}");
+            MelonLogger.Msg($"DataCenterPlus: registered — switch={nSwitch} router={nRouter} firewall={nFire} " +
+                            $"server={nServer} sfpModule={nSfp} sfpBox={nBox}");
         }
+
+        private static int Len(Il2CppReferenceArray<GameObject> a) => a?.Length ?? -1;
 
         private static void SetupNetworking(MainGameManager mgm)
         {
@@ -75,6 +95,9 @@ namespace DataCenterPlus
 
         private static void RegisterNet(DeviceKind kind, int id, NetTier tier, string name)
         {
+            int shopType = kind == DeviceKind.Switch ? (int)PlayerManager.ObjectInHand.Switch
+                         : kind == DeviceKind.Router ? (int)PlayerManager.ObjectInHand.Router
+                         : (int)PlayerManager.ObjectInHand.Firewall;
             DeviceRegistry.Register(new DeviceRegistry.Entry
             {
                 CustomId    = id,
@@ -85,6 +108,7 @@ namespace DataCenterPlus
                 Color       = tier.Color,
                 IconColor   = tier.Color,
                 SpeedGbps   = tier.SpeedGbps,
+                ShopItemType = shopType,
                 TargetIops  = 0f,
             });
         }
@@ -100,8 +124,13 @@ namespace DataCenterPlus
                 if (go == null) continue;
 
                 float baseIops = 0f;
+                int shopType = (int)PlayerManager.ObjectInHand.Server3U;
                 var srv = go.GetComponent<Server>();
-                if (srv != null) baseIops = srv.maxProcessingSpeed;
+                if (srv != null)
+                {
+                    baseIops = srv.maxProcessingSpeed;
+                    try { shopType = (int)srv.objectInHandType; } catch { }
+                }
 
                 float target = ComputeTargetIops(baseIops);
 
@@ -114,14 +143,15 @@ namespace DataCenterPlus
                     BaseType    = i,
                     Kind        = DeviceKind.Server,
                     DisplayName = baseName + TierConfig.ServerNameSuffix,
-                    Price       = 0, // resolved from the base shop item at shop-injection time
+                    Price       = Mathf.Max(1, Mathf.RoundToInt(target)), // IOPS-based default; refined from shop price if found
                     Color       = TierConfig.ServerTint,
                     IconColor   = TierConfig.ServerIconAccent,
                     SpeedGbps   = 0f,
+                    ShopItemType = shopType,
                     TargetIops  = target,
                 });
 
-                MelonLogger.Msg($"DataCenterPlus: server '{baseName}' baseIOPS={baseIops} -> {target} (type {id})");
+                MelonLogger.Msg($"DataCenterPlus: server '{baseName}' baseIOPS={baseIops} -> {target} (type {id}, shopType {shopType})");
             }
 
             mgm.serverPrefabs = ExtendWithTemplates(mgm, mgm.serverPrefabs, DeviceKind.Server);
@@ -202,6 +232,7 @@ namespace DataCenterPlus
                     IconColor   = tier.Color,
                     SpeedGbps   = tier.SpeedGbps,
                     ModuleId    = DeviceRegistry.SFP_ID_BASE + t,
+                    ShopItemType = (int)PlayerManager.ObjectInHand.SFPBox,
                     TargetIops  = 0f,
                 });
             }
@@ -397,75 +428,53 @@ namespace DataCenterPlus
             yield return new WaitForSeconds(1.5f);
 
             var mgm = MainGameManager.instance;
-            if (mgm == null) yield break;
+            if (mgm == null) { MelonLogger.Warning("DataCenterPlus: no MainGameManager at shop injection."); yield break; }
             var shop = mgm.computerShop;
-            if (shop == null || shop.shopItems == null) yield break;
+            if (shop == null || shop.shopItems == null) { MelonLogger.Warning("DataCenterPlus: no computerShop/shopItems at injection."); yield break; }
 
-            // Discover base shop items. We only strictly need ONE template button to
-            // clone; type-specific sources are used for nicer styling/price/sprite.
-            ShopItem switchSource = null;
-            ShopItem sfpSource = null;
+            // Diagnostic dump of the existing shop so we can see item types/ids/names.
+            MelonLogger.Msg($"DataCenterPlus: shop has {shop.shopItems.Length} items:");
             ShopItem anySource = null;
             var serverSources = new System.Collections.Generic.Dictionary<int, ShopItem>();
-
-            foreach (var si in shop.shopItems)
+            for (int i = 0; i < shop.shopItems.Length; i++)
             {
+                var si = shop.shopItems[i];
                 if (si == null || si.shopItemSO == null) continue;
                 if (anySource == null) anySource = si;
                 var so = si.shopItemSO;
-                int it = (int)so.itemType;
-                if (it == (int)PlayerManager.ObjectInHand.Switch && so.itemID == BaseSwitchType)
-                { switchSource = si; BaseSwitchSprite = so.sprite; }
-                else if (IsServerType(so.itemType))
-                { if (!serverSources.ContainsKey(so.itemID)) serverSources[so.itemID] = si; }
-                else if ((it == (int)PlayerManager.ObjectInHand.SFPModule
-                       || it == (int)PlayerManager.ObjectInHand.SFPBox) && sfpSource == null)
-                { sfpSource = si; }
+                MelonLogger.Msg($"    [{i}] type={(int)so.itemType}({so.itemType}) id={so.itemID} name='{so.itemName}'");
+                if (IsServerType(so.itemType) && !serverSources.ContainsKey(so.itemID))
+                    serverSources[so.itemID] = si;
             }
 
             var parent = ResolveShopParent(shop);
-            if (parent == null) yield break;
+            if (parent == null) { MelonLogger.Warning("DataCenterPlus: could not resolve shop parent."); yield break; }
+            MelonLogger.Msg($"DataCenterPlus: shop parent = '{parent.name}', template source = '{(anySource != null ? anySource.name : "<none>")}', serverSources found = {serverSources.Count}");
 
-            // Guaranteed template: prefer the switch button, else any shop button.
-            var template = switchSource ?? anySource;
-            if (template == null) { MelonLogger.Warning("DataCenterPlus: no shop item to clone; aborting injection."); yield break; }
-            var netSprite = switchSource != null ? switchSource.shopItemSO.sprite : template.shopItemSO.sprite;
-            var sfpSprite = sfpSource != null ? sfpSource.shopItemSO.sprite : netSprite;
+            if (anySource == null) { MelonLogger.Warning("DataCenterPlus: no shop item to clone; aborting injection."); yield break; }
 
             int added = 0;
-
-            // Networking (switch/router/firewall) — cloned from the switch/any button.
             foreach (var kv in DeviceRegistry.Entries)
             {
                 var e = kv.Value;
-                if (e.Kind != DeviceKind.Switch && e.Kind != DeviceKind.Router && e.Kind != DeviceKind.Firewall) continue;
-                var oh = e.Kind == DeviceKind.Switch ? PlayerManager.ObjectInHand.Switch
-                       : e.Kind == DeviceKind.Router ? PlayerManager.ObjectInHand.Router
-                       : PlayerManager.ObjectInHand.Firewall;
-                if (AddShopButton(template, parent, e, oh, netSprite) != null) added++;
+
+                // Prefer a type-matched source for nicer styling/sprite; else the generic one.
+                ShopItem src = anySource;
+                Sprite sprite = anySource.shopItemSO.sprite;
+                if (e.Kind == DeviceKind.Server && serverSources.TryGetValue(e.BaseType, out var ssrc))
+                {
+                    src = ssrc;
+                    sprite = ssrc.shopItemSO.sprite;
+                    e.Price = Mathf.Max(1, Mathf.RoundToInt(ssrc.shopItemSO.price * TierConfig.ServerPriceMultiplier));
+                }
+
+                if (AddShopButton(shop, src, parent, e, sprite) != null) added++;
+                else MelonLogger.Warning($"DataCenterPlus: failed to add button for '{e.DisplayName}' (id {e.CustomId}).");
             }
 
-            // Servers — one HPC clone per base server, matched by base type id.
-            foreach (var kv in serverSources)
-            {
-                int baseType = kv.Key;
-                var src = kv.Value;
-                if (!DeviceRegistry.TryGet(DeviceRegistry.SERVER_ID_BASE + baseType, out var e)) continue;
-                e.Price = Mathf.RoundToInt(src.shopItemSO.price * TierConfig.ServerPriceMultiplier);
-                if (AddShopButton(src, parent, e, src.shopItemSO.itemType, src.shopItemSO.sprite) != null) added++;
-            }
-
-            // SFP transceivers are sold as 5-packs (SFP boxes), exactly like vanilla.
-            foreach (var kv in DeviceRegistry.Entries)
-            {
-                var e = kv.Value;
-                if (e.Kind != DeviceKind.SfpBox) continue;
-                if (AddShopButton(template, parent, e, PlayerManager.ObjectInHand.SFPBox, sfpSprite) != null) added++;
-            }
-
-            GrowShopContainer(parent, template, added);
+            GrowShopContainer(parent, anySource, added);
             Canvas.ForceUpdateCanvases();
-            MelonLogger.Msg($"DataCenterPlus: injected {added} shop item(s).");
+            MelonLogger.Msg($"DataCenterPlus: injected {added}/{DeviceRegistry.Entries.Count} shop item(s).");
         }
 
         private static bool IsServerType(PlayerManager.ObjectInHand t)
@@ -483,9 +492,11 @@ namespace DataCenterPlus
             return section != null ? section.gameObject : shopParent;
         }
 
-        private static GameObject AddShopButton(ShopItem source, GameObject parent, DeviceRegistry.Entry entry,
-                                                PlayerManager.ObjectInHand itemType, Sprite sprite)
+        private static GameObject AddShopButton(ComputerShop shop, ShopItem source, GameObject parent,
+                                                DeviceRegistry.Entry entry, Sprite sprite)
         {
+            var itemType = (PlayerManager.ObjectInHand)entry.ShopItemType;
+
             var so = ScriptableObject.CreateInstance<ShopItemSO>();
             so.itemName   = entry.DisplayName;
             so.price      = entry.Price;
@@ -513,12 +524,26 @@ namespace DataCenterPlus
             if (entry.IconColor.a > 0f && shopItem.itemIcon != null)
                 shopItem.itemIcon.color = entry.IconColor;
 
+            // Drive the purchase with our own handler instead of relying on the game's
+            // button wiring (which varies by version and left clicks inert).
             var btnExt = cloned.GetComponent<ButtonExtended>();
             if (btnExt != null)
             {
                 btnExt.doSubmitOnSelect = false;
                 btnExt.selectOnPointerEnter = false;
+
+                var h = cloned.AddComponent<ShopButtonHandler>();
+                h.shop = shop;
+                h.itemID = entry.CustomId;
+                h.price = entry.Price;
+                h.itemType = itemType;
+                h.displayName = entry.DisplayName;
+                var action = DelegateSupport.ConvertDelegate<UnityEngine.Events.UnityAction>(h.OnClick);
+
+                if (btnExt.onClick != null) btnExt.onClick.RemoveAllListeners();
+                btnExt.m_OnClick.AddListener(action);
                 btnExt.functionToBeCalledOnSelect.RemoveAllListeners();
+                btnExt.functionToBeCalledOnSelect.AddListener(action);
             }
 
             cloned.SetActive(true);
