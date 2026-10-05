@@ -7,7 +7,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
 
-[assembly: MelonInfo(typeof(DataCenterPlus.Core), "DataCenterPlus", "1.0.4", "brzb0 + contributors")]
+[assembly: MelonInfo(typeof(DataCenterPlus.Core), "DataCenterPlus", "1.0.5", "brzb0 + contributors")]
 [assembly: MelonGame("Waseku", "Data Center")]
 
 namespace DataCenterPlus
@@ -17,6 +17,7 @@ namespace DataCenterPlus
         internal static int    BaseSwitchType  = -1;   // index of the top QSFP+ switch
         internal static int    BaseSfpType     = -1;   // index of a base SFP transceiver
         internal static int    BaseSfpBoxType  = -1;   // index of a base SFP box (5-pack)
+        internal static int    BaseCableType   = -1;   // index of a base fiber cable reel
         internal static GameObject TemplateHolder { get; private set; }
 
         public override void OnInitializeMelon()
@@ -39,8 +40,9 @@ namespace DataCenterPlus
             SetupNetworking(mgm);
             SetupServers(mgm);
             SetupSfp(mgm);
+            SetupCables(mgm);
 
-            int nSwitch = 0, nRouter = 0, nFire = 0, nServer = 0, nSfp = 0, nBox = 0;
+            int nSwitch = 0, nRouter = 0, nFire = 0, nServer = 0, nSfp = 0, nBox = 0, nCable = 0;
             foreach (var kv in DeviceRegistry.Entries)
                 switch (kv.Value.Kind)
                 {
@@ -50,12 +52,13 @@ namespace DataCenterPlus
                     case DeviceKind.Server: nServer++; break;
                     case DeviceKind.Sfp: nSfp++; break;
                     case DeviceKind.SfpBox: nBox++; break;
+                    case DeviceKind.Cable: nCable++; break;
                 }
             MelonLogger.Msg($"DataCenterPlus: arrays — switches={Len(mgm.switchesPrefabs)} routers={Len(mgm.routersPrefabs)} " +
                             $"firewalls={Len(mgm.firewallsPrefabs)} servers={Len(mgm.serverPrefabs)} " +
-                            $"sfp={Len(mgm.sfpPrefabs)} sfpBoxes={Len(mgm.sfpsBoxedPrefab)}");
+                            $"sfp={Len(mgm.sfpPrefabs)} sfpBoxes={Len(mgm.sfpsBoxedPrefab)} cables={Len(mgm.cableSpinnerPrefab)}");
             MelonLogger.Msg($"DataCenterPlus: registered — switch={nSwitch} router={nRouter} firewall={nFire} " +
-                            $"server={nServer} sfpModule={nSfp} sfpBox={nBox}");
+                            $"server={nServer} sfpModule={nSfp} sfpBox={nBox} cable={nCable}");
         }
 
         private static int Len(Il2CppReferenceArray<GameObject> a) => a?.Length ?? -1;
@@ -274,8 +277,41 @@ namespace DataCenterPlus
             mgm.sfpsBoxedPrefab = ExtendWithTemplates(mgm, mgm.sfpsBoxedPrefab, DeviceKind.SfpBox);
         }
 
-        // Copies the existing array and inserts inactive templates at each custom id
-        // of the given kind (needed so save/load can resolve the prefab by type).
+        private static void SetupCables(MainGameManager mgm)
+        {
+            var cables = mgm.cableSpinnerPrefab;
+            if (cables == null || cables.Length == 0)
+            {
+                MelonLogger.Warning("DataCenterPlus: no cable prefabs; tier cables will not be added.");
+                return;
+            }
+            // Prefer a fiber QSFP cable as the clone base.
+            int best = PickByName(cables, "qsfp");
+            if (best < 0) best = PickByName(cables, "fiber");
+            if (best < 0) return;
+            BaseCableType = best;
+            MelonLogger.Msg($"DataCenterPlus: base cable = '{cables[best].name}' (type {best})");
+
+            for (int t = 0; t < TierConfig.CableTiers.Length; t++)
+            {
+                var ct = TierConfig.CableTiers[t];
+                var color = t < TierConfig.SfpTiers.Length ? TierConfig.SfpTiers[t].Color : new Color(1, 1, 1, 1);
+                DeviceRegistry.Register(new DeviceRegistry.Entry
+                {
+                    CustomId     = DeviceRegistry.CABLE_ID_BASE + t,
+                    BaseType     = BaseCableType,
+                    Kind         = DeviceKind.Cable,
+                    DisplayName  = ct.Label,
+                    Price        = ct.Price,
+                    Color        = color,
+                    IconColor    = color,
+                    ShopItemType = (int)PlayerManager.ObjectInHand.CableSpinner,
+                    TargetIops   = 0f,
+                });
+            }
+
+            mgm.cableSpinnerPrefab = ExtendWithTemplates(mgm, mgm.cableSpinnerPrefab, DeviceKind.Cable);
+        }
         private static Il2CppReferenceArray<GameObject> ExtendWithTemplates(
             MainGameManager mgm, Il2CppReferenceArray<GameObject> existing, DeviceKind kind)
         {
@@ -316,8 +352,25 @@ namespace DataCenterPlus
                     return BuildSfp(mgm, entry, parent);
                 case DeviceKind.SfpBox:
                     return BuildSfpBox(mgm, entry, parent);
+                case DeviceKind.Cable:
+                    return BuildCable(mgm, entry, parent);
             }
             return null;
+        }
+
+        private static GameObject BuildCable(MainGameManager mgm, DeviceRegistry.Entry entry, Transform parent)
+        {
+            var basePrefab = (entry.BaseType >= 0 && entry.BaseType < mgm.cableSpinnerPrefab.Length)
+                ? mgm.cableSpinnerPrefab[entry.BaseType] : null;
+            var clone = Clone(basePrefab, parent);
+            if (clone == null) return null;
+            clone.name = $"DCP_cable_{entry.CustomId}";
+
+            var usable = clone.GetComponent<UsableObject>();
+            if (usable != null) TrySet(() => usable.prefabID = entry.CustomId, "cable.prefabID");
+
+            ApplyTint(clone, entry.Color);
+            return clone;
         }
 
         private static GameObject Clone(GameObject basePrefab, Transform parent)
@@ -476,7 +529,7 @@ namespace DataCenterPlus
 
             // Diagnostic dump of the existing shop so we can see item types/ids/names.
             MelonLogger.Msg($"DataCenterPlus: shop has {shop.shopItems.Length} items:");
-            ShopItem anySource = null, switchSource = null, anySwitch = null, boxSource = null, anyBox = null;
+            ShopItem anySource = null, switchSource = null, anySwitch = null, boxSource = null, anyBox = null, cableSource = null, anyCable = null;
             var serverSources = new System.Collections.Generic.Dictionary<int, ShopItem>();
             for (int i = 0; i < shop.shopItems.Length; i++)
             {
@@ -491,15 +544,18 @@ namespace DataCenterPlus
                 { if (anySwitch == null) anySwitch = si; if (so.itemID == BaseSwitchType) switchSource = si; }
                 else if (it == (int)PlayerManager.ObjectInHand.SFPBox)
                 { if (anyBox == null) anyBox = si; if (so.itemID == BaseSfpBoxType) boxSource = si; }
+                else if (it == (int)PlayerManager.ObjectInHand.CableSpinner)
+                { if (anyCable == null) anyCable = si; if (so.itemID == BaseCableType) cableSource = si; }
                 else if (IsServerType(so.itemType) && !serverSources.ContainsKey(so.itemID))
                     serverSources[so.itemID] = si;
             }
             switchSource = switchSource ?? anySwitch;
             boxSource = boxSource ?? anyBox;
+            cableSource = cableSource ?? anyCable;
 
             var parent = ResolveShopParent(shop);
             if (parent == null) { MelonLogger.Warning("DataCenterPlus: could not resolve shop parent."); yield break; }
-            MelonLogger.Msg($"DataCenterPlus: shop parent='{parent.name}', switchSource={(switchSource!=null)}, boxSource={(boxSource!=null)}, serverSources={serverSources.Count}");
+            MelonLogger.Msg($"DataCenterPlus: shop parent='{parent.name}', switchSource={(switchSource!=null)}, boxSource={(boxSource!=null)}, cableSource={(cableSource!=null)}, serverSources={serverSources.Count}");
 
             if (anySource == null) { MelonLogger.Warning("DataCenterPlus: no shop item to clone; aborting injection."); yield break; }
 
@@ -515,6 +571,8 @@ namespace DataCenterPlus
                     src = switchSource ?? anySource;
                 else if (e.Kind == DeviceKind.SfpBox)
                     src = boxSource ?? anySource;
+                else if (e.Kind == DeviceKind.Cable)
+                    src = cableSource ?? anySource;
                 else if (e.Kind == DeviceKind.Server && serverSources.TryGetValue(e.BaseType, out var ssrc))
                 {
                     src = ssrc;

@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace DataCenterPlus
 {
-    internal enum DeviceKind { Switch, Router, Firewall, Server, Sfp, SfpBox }
+    internal enum DeviceKind { Switch, Router, Firewall, Server, Sfp, SfpBox, Cable }
 
     internal static class DeviceRegistry
     {
@@ -15,6 +15,7 @@ namespace DataCenterPlus
         internal const int SERVER_ID_BASE   = 1000;
         internal const int SFP_ID_BASE      = 2000;
         internal const int SFPBOX_ID_BASE   = 2100;
+        internal const int CABLE_ID_BASE    = 2200;
 
         internal sealed class Entry
         {

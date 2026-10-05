@@ -58,6 +58,15 @@ namespace DataCenterPlus
             new SfpTier("QSFP-DD Transceiver 400G", 400f, 8000, new Color(0.95f, 0.75f, 0.10f, 1f)),
         };
 
+        // ------------------------------------------------- FIBER CABLES (per tier)
+        // Dedicated cable reel for each bandwidth tier (cloned from the fiber QSFP
+        // cable). Label and price per tier; colour is taken from the SFP tier above.
+        internal static readonly (string Label, int Price)[] CableTiers =
+        {
+            ("Cable fiber QSFP28 100G",  1200),
+            ("Cable fiber QSFP-DD 400G", 3500),
+        };
+
         // --------------------------------------------------------- SHOP PLACEMENT
         // Name of the shop sub-section to place custom items under (created by the
         // base game / other mods). Falls back to the main shop list if not found.

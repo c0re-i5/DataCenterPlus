@@ -125,6 +125,17 @@ namespace DataCenterPlus
         }
     }
 
+    [HarmonyPatch(typeof(MainGameManager), nameof(MainGameManager.GetCableSpinnerPrefab))]
+    internal static class PatchGetCableSpinnerPrefab
+    {
+        private static void Postfix(MainGameManager __instance, int prefabID, ref GameObject __result)
+        {
+            if (DeviceRegistry.IsCustom(prefabID)
+                && __instance.cableSpinnerPrefab != null && prefabID < __instance.cableSpinnerPrefab.Length)
+                __result = __instance.cableSpinnerPrefab[prefabID];
+        }
+    }
+
     [HarmonyPatch(typeof(MainGameManager), nameof(MainGameManager.ReturnServerNameFromType))]
     internal static class PatchReturnServerName
     {
