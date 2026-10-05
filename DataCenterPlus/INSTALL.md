@@ -39,6 +39,22 @@ inside `<GameDir>`.
 > If the game is set to launch without a console, you can still read logs later in
 > `<GameDir>\MelonLoader\Latest.log`.
 
+> ### ⚠️ Known blocker: `UnityEngine.CoreModule Version 0.0.0.0 not available`
+> On recent builds (Unity **6000.4+**, MelonLoader **0.7.2/0.7.3**), MelonLoader's interop step writes
+> **duplicate `<>O` type definitions** into the generated `UnityEngine.CoreModule.dll`, which crashes
+> before any mod loads (also shows as `Duplicate type '<>O'`). This blocks **all** Data Center mods, not
+> just this one. Fix it with a community patcher, then relaunch:
+>
+> - **Recommended — [FixCoreModule](https://github.com/V1ndicate1/FixCoreModule/releases/latest)**
+>   (open‑source, MIT, no network calls): close the game, run `FixCoreModule.exe`, let it detect the
+>   game and confirm the fix, relaunch. It saves a `.bak` of the original.
+> - **Alternative — [DataCenter‑MelonLoader‑Patcher](https://github.com/MaximumLeet/DataCenter-MelonLoader-Patcher)**
+>   (Data Center–specific): run `DCMelonPatcher.ps1` with PowerShell, or drop its patched
+>   `UnityEngine.CoreModule.dll` into `<GameDir>\MelonLoader\Il2CppAssemblies\`.
+>
+> **Re‑apply the fix** whenever the game updates or MelonLoader says `Assembly Generation Needed!` — the
+> corruption returns when the assemblies are regenerated.
+
 ## 3. Install the mod
 
 Copy **`DataCenterPlus.dll`** into **`<GameDir>\Mods\`**.
@@ -126,6 +142,7 @@ All balance/visual values live in [`DataCenterPlus/TierConfig.cs`](./DataCenterP
 
 | Symptom | Fix |
 |---|---|
+| `UnityEngine.CoreModule Version 0.0.0.0 not available` / `Duplicate type '<>O'` / game crashes before mods load | MelonLoader generated a corrupt `UnityEngine.CoreModule.dll` (Unity 6000.4+). Run [FixCoreModule](https://github.com/V1ndicate1/FixCoreModule/releases/latest) (or the [DataCenter patcher](https://github.com/MaximumLeet/DataCenter-MelonLoader-Patcher)). See the callout under §2. Re‑apply after game updates. |
 | No `[DataCenterPlus]` line in the console | DLL isn't in `<GameDir>\Mods\`, or MelonLoader didn't finish first‑run asset generation. Confirm the console/`Latest.log` shows MelonLoader starting. |
 | `MelonLoader: unsupported / no assemblies` | Reinstall MelonLoader choosing the **IL2CPP + .NET 6** build. |
 | `injected 0 shop item(s)` or `no shop item to clone` | The shop wasn't ready; the mod waits 1.5 s after a scene load. If it persists, the shop layout changed — capture the log and we'll adjust discovery. |
