@@ -7,7 +7,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
 
-[assembly: MelonInfo(typeof(DataCenterPlus.Core), "DataCenterPlus", "1.0.2", "brzb0 + contributors")]
+[assembly: MelonInfo(typeof(DataCenterPlus.Core), "DataCenterPlus", "1.0.3", "brzb0 + contributors")]
 [assembly: MelonGame("Waseku", "Data Center")]
 
 namespace DataCenterPlus
@@ -21,7 +21,6 @@ namespace DataCenterPlus
 
         public override void OnInitializeMelon()
         {
-            ClassInjector.RegisterTypeInIl2Cpp<CartButtonHandler>();
             ClassInjector.RegisterTypeInIl2Cpp<ShopButtonHandler>();
             ClassInjector.RegisterTypeInIl2Cpp<DcpPackTag>();
         }
@@ -485,6 +484,7 @@ namespace DataCenterPlus
             foreach (var kv in DeviceRegistry.Entries)
             {
                 var e = kv.Value;
+                if (e.Kind == DeviceKind.Sfp) continue; // loose modules aren't sold; packs (SfpBox) are
 
                 // Clone the closest-matching base card so icons/styling look right.
                 ShopItem src = anySource;

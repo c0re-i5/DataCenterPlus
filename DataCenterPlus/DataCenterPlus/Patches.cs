@@ -1,7 +1,6 @@
 using System;
 using HarmonyLib;
 using Il2Cpp;
-using Il2CppInterop.Runtime;
 using MelonLoader;
 using UnityEngine;
 using Object = UnityEngine.Object;
@@ -17,8 +16,9 @@ namespace DataCenterPlus
         internal int   sfpType;
     }
 
-    // Explicit click handler for our injected shop buttons. We can't rely on the
-    // vanilla button wiring (it differs by game version), so we drive the buy directly.
+    // Explicit click handler for our injected shop buttons. It simply forwards to the
+    // vanilla ButtonBuyShopItem, so the game's own (current-version) buy/cart/spawn
+    // logic runs — we only supply a custom itemID that resolves to our prefab.
     public class ShopButtonHandler : MonoBehaviour
     {
         public ShopButtonHandler(IntPtr ptr) : base(ptr) { }
@@ -35,99 +35,8 @@ namespace DataCenterPlus
             float now = Time.unscaledTime;
             if (now - _lastFire < 0.3f) return;   // debounce double-fire (click + select)
             _lastFire = now;
-            shop.ButtonBuyShopItem(itemID, price, itemType, displayName, false);
-        }
-    }
-
-    // Injected helper for cart +/- buttons (IL2CPP UnityAction can't bind lambdas).
-    public class CartButtonHandler : MonoBehaviour
-    {
-        public CartButtonHandler(IntPtr ptr) : base(ptr) { }
-
-        internal ShopCartItem cart;
-        internal ComputerShop shop;
-        internal bool isAdd;
-        internal int itemID;
-        internal PlayerManager.ObjectInHand itemType;
-
-        private GameObject FindPrefab()
-        {
-            var mgm = MainGameManager.instance;
-            if (mgm == null) return null;
-            if (!DeviceRegistry.TryGet(itemID, out var entry)) return null;
-            return Core.BuildPrefab(mgm, entry);
-        }
-
-        private int FindFreeSpawnPoint()
-        {
-            var spawns = shop.transformProductItemsSpawns;
-            if (spawns == null || spawns.Length == 0) return -1;
-            for (int i = 0; i < spawns.Length; i++)
-                if (shop.itemsSpawnsInUse == null || i >= shop.itemsSpawnsInUse.Length || shop.itemsSpawnsInUse[i] == 0)
-                    return i;
-            return -1;
-        }
-
-        private int SpawnAt(int spawnIndex)
-        {
-            var prefab = FindPrefab();
-            if (prefab == null) return -1;
-            var spawns = shop.transformProductItemsSpawns;
-            var pos = spawns[spawnIndex];
-            var obj = Object.Instantiate(prefab, pos.position, pos.rotation);
-            Object.Destroy(prefab);
-            if (shop.itemsSpawnsInUse != null && spawnIndex < shop.itemsSpawnsInUse.Length)
-                shop.itemsSpawnsInUse[spawnIndex] = 1;
-            int uid = shop.uniqueID++;
-            if (shop.spawnedItems != null) shop.spawnedItems[uid] = obj;
-            if (shop.spawnedItemPositions != null) shop.spawnedItemPositions[uid] = spawnIndex;
-            return uid;
-        }
-
-        public void HandleClick()
-        {
-            if (cart == null || shop == null || cart.spawnedItemUIDs == null) return;
-
-            if (isAdd)
-            {
-                if (cart.spawnedItemUIDs.Count >= 99) return;
-                int spawnIdx = FindFreeSpawnPoint();
-                if (spawnIdx < 0) return;
-                int uid = SpawnAt(spawnIdx);
-                if (uid < 0) return;
-                cart.spawnedItemUIDs.Add(uid);
-                cart.UpdateDisplay();
-                shop.UpdateCartTotal();
-            }
-            else
-            {
-                int lastUid = cart.spawnedItemUIDs[cart.spawnedItemUIDs.Count - 1];
-                if (shop.spawnedItems != null && shop.spawnedItems.ContainsKey(lastUid))
-                {
-                    var obj = shop.spawnedItems[lastUid];
-                    if (obj != null) Object.Destroy(obj);
-                    shop.spawnedItems.Remove(lastUid);
-                }
-                if (shop.spawnedItemPositions != null && shop.spawnedItemPositions.ContainsKey(lastUid))
-                {
-                    int posIdx = shop.spawnedItemPositions[lastUid];
-                    if (shop.itemsSpawnsInUse != null && posIdx < shop.itemsSpawnsInUse.Length)
-                        shop.itemsSpawnsInUse[posIdx] = 0;
-                    shop.spawnedItemPositions.Remove(lastUid);
-                }
-
-                if (cart.spawnedItemUIDs.Count <= 1)
-                {
-                    if (shop.cartUIItems != null) shop.cartUIItems.Remove(cart);
-                    shop.UpdateCartTotal();
-                    Object.Destroy(cart.gameObject);
-                    return;
-                }
-
-                cart.spawnedItemUIDs.RemoveAt(cart.spawnedItemUIDs.Count - 1);
-                cart.UpdateDisplay();
-                shop.UpdateCartTotal();
-            }
+            try { shop.ButtonBuyShopItem(itemID, price, itemType, displayName, false); }
+            catch (Exception e) { MelonLogger.Warning($"DataCenterPlus: buy failed for id {itemID} ({e.GetType().Name})"); }
         }
     }
 
@@ -147,147 +56,93 @@ namespace DataCenterPlus
         }
     }
 
-    // -------------------------------------------------------------- SPAWN (save/load)
-    [HarmonyPatch(typeof(ComputerShop), nameof(ComputerShop.SpawnPhysicalItem))]
-    internal static class PatchSpawnPhysicalItem
+    // ------------------------------------------------ PREFAB RESOLUTION (buy + save/load)
+    // The vanilla buy flow and save/load both resolve a prefab by type via these
+    // Get*Prefab methods; we return our custom template for custom type IDs.
+    [HarmonyPatch(typeof(MainGameManager), nameof(MainGameManager.GetServerPrefab))]
+    internal static class PatchGetServerPrefab
     {
-        private static bool Prefix(ref GameObject prefab, int price, PlayerManager.ObjectInHand itemType)
+        private static void Postfix(MainGameManager __instance, int serverType, ref GameObject __result)
         {
-            if (prefab == null) return true;
-            var mgm = MainGameManager.instance;
-            if (mgm == null) return true;
-
-            if (TrySwap(mgm.routersPrefabs,   DeviceRegistry.ROUTER_ID_BASE,   ref prefab, mgm)) return true;
-            if (TrySwap(mgm.firewallsPrefabs, DeviceRegistry.FIREWALL_ID_BASE, ref prefab, mgm)) return true;
-            if (TrySwap(mgm.switchesPrefabs,  DeviceRegistry.SWITCH_ID_BASE,   ref prefab, mgm)) return true;
-            if (TrySwap(mgm.serverPrefabs,    DeviceRegistry.SERVER_ID_BASE,   ref prefab, mgm)) return true;
-            if (TrySwap(mgm.sfpPrefabs,       DeviceRegistry.SFP_ID_BASE,      ref prefab, mgm)) return true;
-            if (TrySwap(mgm.sfpsBoxedPrefab,  DeviceRegistry.SFPBOX_ID_BASE,   ref prefab, mgm)) return true;
-            return true;
-        }
-
-        private static bool TrySwap(Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppReferenceArray<GameObject> arr,
-                                    int idBase, ref GameObject prefab, MainGameManager mgm)
-        {
-            if (arr == null) return false;
-            for (int i = 0; i < arr.Length; i++)
-            {
-                if (arr[i] != prefab) continue;
-                if (DeviceRegistry.TryGet(i, out var e))
-                {
-                    var c = Core.BuildPrefab(mgm, e);
-                    if (c != null) { prefab = c; }
-                }
-                return true;
-            }
-            return false;
+            if (DeviceRegistry.IsCustom(serverType)
+                && __instance.serverPrefabs != null && serverType < __instance.serverPrefabs.Length)
+                __result = __instance.serverPrefabs[serverType];
         }
     }
 
-    // ------------------------------------------------------------------- CUSTOM BUY
-    [HarmonyPatch(typeof(ComputerShop), nameof(ComputerShop.ButtonBuyShopItem))]
-    internal static class PatchButtonBuyShopItem
+    [HarmonyPatch(typeof(MainGameManager), nameof(MainGameManager.GetSwitchPrefab))]
+    internal static class PatchGetSwitchPrefab
     {
-        private static bool Prefix(ComputerShop __instance, int itemID, int price,
-                                   PlayerManager.ObjectInHand itemType, string displayName, bool isCustomColor)
+        private static void Postfix(MainGameManager __instance, int switchType, ref GameObject __result)
         {
-            if (!DeviceRegistry.TryGet(itemID, out var entry)) return true;
-
-            var mgm = MainGameManager.instance;
-            if (mgm == null) return true;
-            var prefab = Core.BuildPrefab(mgm, entry);
-            if (prefab == null) return true;
-
-            var spawns = __instance.transformProductItemsSpawns;
-            if (spawns == null || spawns.Length == 0) { Object.Destroy(prefab); return false; }
-
-            int idx = -1;
-            for (int i = 0; i < spawns.Length; i++)
-                if (__instance.itemsSpawnsInUse == null || i >= __instance.itemsSpawnsInUse.Length || __instance.itemsSpawnsInUse[i] == 0)
-                { idx = i; break; }
-            if (idx < 0) { Object.Destroy(prefab); return false; }
-
-            var pos = spawns[idx];
-            var obj = Object.Instantiate(prefab, pos.position, pos.rotation);
-            Object.Destroy(prefab);
-
-            if (__instance.itemsSpawnsInUse != null && idx < __instance.itemsSpawnsInUse.Length)
-                __instance.itemsSpawnsInUse[idx] = 1;
-
-            int uid = __instance.uniqueID++;
-            if (__instance.spawnedItems != null) __instance.spawnedItems[uid] = obj;
-            if (__instance.spawnedItemPositions != null) __instance.spawnedItemPositions[uid] = idx;
-
-            // Already in cart? stack it.
-            if (__instance.cartUIItems != null)
-            {
-                for (int i = 0; i < __instance.cartUIItems.Count; i++)
-                {
-                    var ci = __instance.cartUIItems[i];
-                    if (ci != null && ci.itemID == itemID && ci.itemType == itemType)
-                    {
-                        ci.spawnedItemUIDs.Add(uid);
-                        ci.UpdateDisplay();
-                        __instance.UpdateCartTotal();
-                        return false;
-                    }
-                }
-            }
-
-            if (__instance.shopCartItemPrefab != null && __instance.parentForShopCartItems != null)
-            {
-                var cartGo = Object.Instantiate(__instance.shopCartItemPrefab, __instance.parentForShopCartItems);
-                if (cartGo != null)
-                {
-                    var cart = cartGo.GetComponent<ShopCartItem>();
-                    if (cart != null)
-                    {
-                        cart.shop = __instance;
-                        cart.itemID = itemID;
-                        cart.price = price;
-                        cart.itemType = itemType;
-                        cart.itemName = entry.DisplayName;
-                        cart.spawnedItemUIDs = new Il2CppSystem.Collections.Generic.List<int>();
-                        cart.spawnedItemUIDs.Add(uid);
-
-                        if (__instance.cartUIItems == null)
-                            __instance.cartUIItems = new Il2CppSystem.Collections.Generic.List<ShopCartItem>();
-                        __instance.cartUIItems.Add(cart);
-
-                        WireCartButton(cartGo, cart, __instance, true,  itemID, itemType, cart.btnAdd);
-                        WireCartButton(cartGo, cart, __instance, false, itemID, itemType, cart.btnRemove);
-
-                        cart.UpdateDisplay();
-                    }
-                }
-            }
-
-            __instance.UpdateCartTotal();
-            return false;
-        }
-
-        private static void WireCartButton(GameObject cartGo, ShopCartItem cart, ComputerShop shop,
-                                           bool isAdd, int itemID, PlayerManager.ObjectInHand itemType,
-                                           UnityEngine.UI.ButtonExtended btn)
-        {
-            if (btn == null) return;
-            btn.onClick.RemoveAllListeners();
-            var h = cartGo.AddComponent<CartButtonHandler>();
-            h.cart = cart; h.shop = shop; h.isAdd = isAdd; h.itemID = itemID; h.itemType = itemType;
-            btn.m_OnClick.AddListener(DelegateSupport.ConvertDelegate<UnityEngine.Events.UnityAction>(h.HandleClick));
+            if (DeviceRegistry.IsCustom(switchType)
+                && __instance.switchesPrefabs != null && switchType < __instance.switchesPrefabs.Length)
+                __result = __instance.switchesPrefabs[switchType];
         }
     }
 
-    [HarmonyPatch(typeof(ShopCartItem), nameof(ShopCartItem.UpdateDisplay))]
-    internal static class PatchUpdateDisplay
+    [HarmonyPatch(typeof(MainGameManager), nameof(MainGameManager.GetRouterPrefab))]
+    internal static class PatchGetRouterPrefab
     {
-        private static void Postfix(ShopCartItem __instance)
+        private static void Postfix(MainGameManager __instance, int routerType, ref GameObject __result)
         {
-            if (!DeviceRegistry.TryGet(__instance.itemID, out var entry)) return;
-            int qty = __instance.spawnedItemUIDs != null ? __instance.spawnedItemUIDs.Count : 1;
-            if (__instance.txtItemName != null) __instance.txtItemName.text = entry.DisplayName;
-            if (__instance.txtAmount != null) __instance.txtAmount.text = qty.ToString();
-            if (__instance.txtPrice != null) __instance.txtPrice.text = $"{__instance.price * qty} $";
+            if (DeviceRegistry.IsCustom(routerType)
+                && __instance.routersPrefabs != null && routerType < __instance.routersPrefabs.Length)
+                __result = __instance.routersPrefabs[routerType];
+        }
+    }
+
+    [HarmonyPatch(typeof(MainGameManager), nameof(MainGameManager.GetFirewallPrefab))]
+    internal static class PatchGetFirewallPrefab
+    {
+        private static void Postfix(MainGameManager __instance, int firewallType, ref GameObject __result)
+        {
+            if (DeviceRegistry.IsCustom(firewallType)
+                && __instance.firewallsPrefabs != null && firewallType < __instance.firewallsPrefabs.Length)
+                __result = __instance.firewallsPrefabs[firewallType];
+        }
+    }
+
+    [HarmonyPatch(typeof(MainGameManager), nameof(MainGameManager.GetSfpPrefab))]
+    internal static class PatchGetSfpPrefab
+    {
+        private static void Postfix(MainGameManager __instance, int prefabID, ref GameObject __result)
+        {
+            if (DeviceRegistry.IsCustom(prefabID)
+                && __instance.sfpPrefabs != null && prefabID < __instance.sfpPrefabs.Length)
+                __result = __instance.sfpPrefabs[prefabID];
+        }
+    }
+
+    [HarmonyPatch(typeof(MainGameManager), nameof(MainGameManager.GetSfpBoxPrefab))]
+    internal static class PatchGetSfpBoxPrefab
+    {
+        private static void Postfix(MainGameManager __instance, int prefabID, ref GameObject __result)
+        {
+            if (DeviceRegistry.IsCustom(prefabID)
+                && __instance.sfpsBoxedPrefab != null && prefabID < __instance.sfpsBoxedPrefab.Length)
+                __result = __instance.sfpsBoxedPrefab[prefabID];
+        }
+    }
+
+    [HarmonyPatch(typeof(MainGameManager), nameof(MainGameManager.ReturnServerNameFromType))]
+    internal static class PatchReturnServerName
+    {
+        private static void Postfix(int type, ref string __result)
+        {
+            if (DeviceRegistry.TryGet(type, out var e) && e.Kind == DeviceKind.Server)
+                __result = e.DisplayName;
+        }
+    }
+
+    [HarmonyPatch(typeof(MainGameManager), nameof(MainGameManager.ReturnSwitchNameFromType))]
+    internal static class PatchReturnSwitchName
+    {
+        private static void Postfix(int type, ref string __result)
+        {
+            if (DeviceRegistry.TryGet(type, out var e) &&
+                (e.Kind == DeviceKind.Switch || e.Kind == DeviceKind.Router || e.Kind == DeviceKind.Firewall))
+                __result = e.DisplayName;
         }
     }
 
@@ -306,12 +161,12 @@ namespace DataCenterPlus
             if (entry.Kind == DeviceKind.Router)
             {
                 var router = __instance.GetComponent<Router>();
-                if (router != null) { mgm.ShowRouterConfigCanvas(router); return false; }
+                if (router != null) { try { mgm.ShowRouterConfigCanvas(router); } catch { } return false; }
             }
             else if (entry.Kind == DeviceKind.Firewall)
             {
                 var firewall = __instance.GetComponent<Firewall>();
-                if (firewall != null) { mgm.ShowFirewallConfigCanvas(firewall); return false; }
+                if (firewall != null) { try { mgm.ShowFirewallConfigCanvas(firewall); } catch { } return false; }
             }
             return true;
         }
@@ -325,8 +180,9 @@ namespace DataCenterPlus
             var usable = __instance.GetComponent<UsableObject>();
             if (usable == null) return;
             if (!DeviceRegistry.TryGet(usable.prefabID, out var entry)) return;
-            __instance.switchId = entry.DisplayName;
-            if (__instance.txtScreen != null) __instance.txtScreen.text = entry.DisplayName;
+            Core.TrySet(() => __instance.switchId = entry.DisplayName, "switch label");
+            if (__instance.txtScreen != null)
+                Core.TrySet(() => __instance.txtScreen.text = entry.DisplayName, "switch screen text");
         }
     }
 
@@ -382,72 +238,6 @@ namespace DataCenterPlus
             Core.TrySet(() => { module.speed = tag.speed; module.sfpType = tag.sfpType; }, "upgrade pack module");
             var usable = module.GetComponent<UsableObject>();
             if (usable != null) Core.TrySet(() => usable.prefabID = tag.moduleId, "pack module prefabID");
-        }
-    }
-
-    // ---------------------------------------------------------- SAVE/LOAD PREFAB LOOKUP
-    [HarmonyPatch(typeof(MainGameManager), nameof(MainGameManager.GetServerPrefab))]
-    internal static class PatchGetServerPrefab
-    {
-        private static void Postfix(MainGameManager __instance, int serverType, ref GameObject __result)
-        {
-            if (__result == null && DeviceRegistry.IsCustom(serverType)
-                && __instance.serverPrefabs != null && serverType < __instance.serverPrefabs.Length)
-                __result = __instance.serverPrefabs[serverType];
-        }
-    }
-
-    [HarmonyPatch(typeof(MainGameManager), nameof(MainGameManager.GetSwitchPrefab))]
-    internal static class PatchGetSwitchPrefab
-    {
-        private static void Postfix(MainGameManager __instance, int switchType, ref GameObject __result)
-        {
-            if (__result == null && DeviceRegistry.IsCustom(switchType)
-                && __instance.switchesPrefabs != null && switchType < __instance.switchesPrefabs.Length)
-                __result = __instance.switchesPrefabs[switchType];
-        }
-    }
-
-    [HarmonyPatch(typeof(MainGameManager), nameof(MainGameManager.GetSfpPrefab))]
-    internal static class PatchGetSfpPrefab
-    {
-        private static void Postfix(MainGameManager __instance, int prefabID, ref GameObject __result)
-        {
-            if (__result == null && DeviceRegistry.IsCustom(prefabID)
-                && __instance.sfpPrefabs != null && prefabID < __instance.sfpPrefabs.Length)
-                __result = __instance.sfpPrefabs[prefabID];
-        }
-    }
-
-    [HarmonyPatch(typeof(MainGameManager), nameof(MainGameManager.GetSfpBoxPrefab))]
-    internal static class PatchGetSfpBoxPrefab
-    {
-        private static void Postfix(MainGameManager __instance, int prefabID, ref GameObject __result)
-        {
-            if (__result == null && DeviceRegistry.IsCustom(prefabID)
-                && __instance.sfpsBoxedPrefab != null && prefabID < __instance.sfpsBoxedPrefab.Length)
-                __result = __instance.sfpsBoxedPrefab[prefabID];
-        }
-    }
-
-    [HarmonyPatch(typeof(MainGameManager), nameof(MainGameManager.ReturnServerNameFromType))]
-    internal static class PatchReturnServerName
-    {
-        private static void Postfix(int type, ref string __result)
-        {
-            if (DeviceRegistry.TryGet(type, out var e) && e.Kind == DeviceKind.Server)
-                __result = e.DisplayName;
-        }
-    }
-
-    [HarmonyPatch(typeof(MainGameManager), nameof(MainGameManager.ReturnSwitchNameFromType))]
-    internal static class PatchReturnSwitchName
-    {
-        private static void Postfix(int type, ref string __result)
-        {
-            if (DeviceRegistry.TryGet(type, out var e) &&
-                (e.Kind == DeviceKind.Switch || e.Kind == DeviceKind.Router || e.Kind == DeviceKind.Firewall))
-                __result = e.DisplayName;
         }
     }
 }
