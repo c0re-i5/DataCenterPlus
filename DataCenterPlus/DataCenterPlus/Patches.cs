@@ -351,7 +351,7 @@ namespace DataCenterPlus
             int id = srv.serverType;
             if (!DeviceRegistry.TryGet(id, out var e) || e.Kind != DeviceKind.Server) return;
             if (e.TargetIops > 0f && !Mathf.Approximately(srv.maxProcessingSpeed, e.TargetIops))
-                srv.maxProcessingSpeed = e.TargetIops;
+                Core.TrySet(() => srv.maxProcessingSpeed = e.TargetIops, "boost server IOPS");
         }
     }
 
@@ -365,7 +365,7 @@ namespace DataCenterPlus
             var usable = module.GetComponent<UsableObject>();
             if (usable == null) return;
             if (!DeviceRegistry.TryGet(usable.prefabID, out var e) || e.Kind != DeviceKind.Sfp) return;
-            if (e.SpeedGbps > 0f) __instance.SetConnectionSpeed(e.SpeedGbps);
+            if (e.SpeedGbps > 0f) Core.TrySet(() => __instance.SetConnectionSpeed(e.SpeedGbps), "set link speed");
         }
     }
 
@@ -378,10 +378,10 @@ namespace DataCenterPlus
             if (__result == null) return;
             var tag = __instance.GetComponent<DcpPackTag>();
             if (tag == null) return;
-            __result.speed   = tag.speed;
-            __result.sfpType = tag.sfpType;
-            var usable = __result.GetComponent<UsableObject>();
-            if (usable != null) usable.prefabID = tag.moduleId;
+            var module = __result;
+            Core.TrySet(() => { module.speed = tag.speed; module.sfpType = tag.sfpType; }, "upgrade pack module");
+            var usable = module.GetComponent<UsableObject>();
+            if (usable != null) Core.TrySet(() => usable.prefabID = tag.moduleId, "pack module prefabID");
         }
     }
 
