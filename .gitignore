@@ -1,0 +1,19 @@
+# External reference clones (upstream projects, not part of this repo)
+/Data-Center-Modding-APIs/
+/DC-NetworkingPlus-Mod/
+
+# Build output
+**/bin/
+**/obj/
+
+# Proprietary game/engine reference binaries — supply locally, do not commit.
+# (See DataCenterPlus/lib/README.md for how to obtain them.)
+/DataCenterPlus/lib/*
+!/DataCenterPlus/lib/README.md
+
+# IDE / OS
+*.user
+.vs/
+.idea/
+.DS_Store
+Thumbs.db
