@@ -7,7 +7,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
 
-[assembly: MelonInfo(typeof(DataCenterPlus.Core), "DataCenterPlus", "1.0.3", "brzb0 + contributors")]
+[assembly: MelonInfo(typeof(DataCenterPlus.Core), "DataCenterPlus", "1.0.4", "brzb0 + contributors")]
 [assembly: MelonGame("Waseku", "Data Center")]
 
 namespace DataCenterPlus
@@ -156,7 +156,7 @@ namespace DataCenterPlus
                     CustomId    = id,
                     BaseType    = i,
                     Kind        = DeviceKind.Server,
-                    DisplayName = baseName + TierConfig.ServerNameSuffix,
+                    DisplayName = BuildHpcName(baseName),
                     Price       = Mathf.Max(1, Mathf.RoundToInt(target)), // IOPS-based default; refined from shop price if found
                     Color       = TierConfig.ServerTint,
                     IconColor   = TierConfig.ServerIconAccent,
@@ -186,6 +186,29 @@ namespace DataCenterPlus
             try { n = mgm.ReturnServerNameFromType(type); } catch { }
             if (string.IsNullOrEmpty(n)) n = go.name;
             return n;
+        }
+
+        // Base server names embed their IOPS (e.g. "System X 3U 5000 IOPS"); rewrite that
+        // number to the boosted value so the label isn't misleading, then add the suffix.
+        private static string BuildHpcName(string baseName)
+        {
+            string n = baseName ?? "";
+            if (!TierConfig.ServerUseAbsoluteIops)
+            {
+                try
+                {
+                    var mt = System.Text.RegularExpressions.Regex.Match(n, @"(\d+)(\s*[Ii][Oo][Pp])");
+                    if (mt.Success)
+                    {
+                        int oldVal = int.Parse(mt.Groups[1].Value);
+                        int newVal = Mathf.RoundToInt(oldVal * TierConfig.ServerIopsMultiplier);
+                        int at = mt.Groups[1].Index, len = mt.Groups[1].Length;
+                        n = n.Substring(0, at) + newVal + n.Substring(at + len);
+                    }
+                }
+                catch { }
+            }
+            return n + TierConfig.ServerNameSuffix;
         }
 
         private static void SetupSfp(MainGameManager mgm)
