@@ -12,24 +12,29 @@ Built on the proven scaffolding of [DC‑NetworkingPlus‑Mod](https://github.co
 ## What it adds
 
 ### 1. Networking equipment — two realistic tiers
-Each tier is a **Switch + Router + Firewall**, cloned from the game's top 32‑port QSFP+ switch.
+Each tier is a **Switch + Router + Firewall + fibre cable**, cloned from the game's top 32‑port
+QSFP+ switch and 4‑lane fibre cable.
 
 | Tier | Real form factor | Link bandwidth |
 | --- | --- | --- |
 | **100 GbE** | QSFP28 | 100 Gbps |
 | **400 GbE** | QSFP‑DD | 400 Gbps |
 
+> **The transceiver determines the link speed.** Like real QSFP hardware, the ports aren't hard‑locked
+> per tier — plug a 100G or 400G transceiver into any QSFP port and the link runs at that speed. The
+> tier switches/cables are matching, correctly‑labelled gear, but the optic is what sets the bandwidth.
+
 ### 2. Transceivers ("cabling")
-The real bandwidth of a link is carried by the **SFP transceiver** you insert into the cable
-(`SFPModule.speed` → `CableLink.InsertSFP` → `connectionSpeed`). So each tier ships its matching optic:
+The real bandwidth of a link is carried by the **SFP transceiver** you insert into the port. Each tier
+ships its matching optic:
 
 - **QSFP28 Transceiver (100 G)**
 - **QSFP‑DD Transceiver (400 G)**
 
 > Sold as **5-packs (SFP boxes)**, exactly like vanilla transceivers: buy the pack, take the modules
-> out, and insert/manipulate them like any item. The mod clones a base box (so the vanilla 5-module
-> fill still works) and **upgrades each module to the tier's speed as it's taken out of the pack**
-> (`SFPBox.TakeSFPFromBox`), so inserted transceivers deliver the right bandwidth and persist in saves.
+> out, and insert/manipulate them like any item. The modules keep the native QSFP type (so cables,
+> boxes and ports all accept them) and the mod applies the tier speed on insertion
+> (`SFPModule.InsertedInSFPPort`), so the link reports the correct 100/400 Gbps.
 
 ### 3. Higher‑IOPS servers
 A new **"HPC"** variant of **every** existing server (all 4 colours — System x / RISC / Mainframe /
