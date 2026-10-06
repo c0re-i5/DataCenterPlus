@@ -252,33 +252,61 @@ namespace DataCenterPlus
     // nominal (0 for our custom modules), so we re-assert the tier speed afterwards.
     internal static class SfpSpeed
     {
-        internal static void Apply(SFPModule module, CableLink link)
+        internal static void Apply(SFPModule module, CableLink link, string via)
         {
-            if (module == null || link == null) return;
-            var usable = module.GetComponent<UsableObject>();
-            if (usable == null) return;
-            if (!DeviceRegistry.TryGet(usable.prefabID, out var e) || e.Kind != DeviceKind.Sfp) return;
-            if (e.SpeedGbps > 0f)
+            if (module == null || link == null) { MelonLogger.Msg($"DCP insert[{via}]: null module/link"); return; }
+            int pid = -1; float mspd = -1f; int mtype = -1; float before = -1f;
+            Core.TrySet(() => pid = module.GetComponent<UsableObject>().prefabID, "");
+            Core.TrySet(() => mspd = module.speed, "");
+            Core.TrySet(() => mtype = module.sfpType, "");
+            Core.TrySet(() => before = link.connectionSpeed, "");
+            bool mine = DeviceRegistry.TryGet(pid, out var e) && e.Kind == DeviceKind.Sfp;
+            if (mine && e.SpeedGbps > 0f)
                 Core.TrySet(() => link.SetConnectionSpeed(e.SpeedGbps / TierConfig.SpeedDivisor), "insert link speed");
+            float after = -1f; Core.TrySet(() => after = link.connectionSpeed, "");
+            MelonLogger.Msg($"DCP insert[{via}]: prefabID={pid} mine={mine} module.speed={mspd} module.sfpType={mtype} link.connSpeed {before}->{after}");
         }
     }
 
     [HarmonyPatch(typeof(SFPModule), nameof(SFPModule.InsertedInSFPPort))]
     internal static class PatchInsertedInSFPPort
     {
-        private static void Postfix(SFPModule __instance, CableLink _link, bool immediate) => SfpSpeed.Apply(__instance, _link);
+        private static void Postfix(SFPModule __instance, CableLink _link, bool immediate) => SfpSpeed.Apply(__instance, _link, "InsertedInSFPPort");
     }
 
     [HarmonyPatch(typeof(SFPModule), nameof(SFPModule.InsertDirectlyIntoPort))]
     internal static class PatchInsertDirectlyIntoPort
     {
-        private static void Postfix(SFPModule __instance, CableLink _link) => SfpSpeed.Apply(__instance, _link);
+        private static void Postfix(SFPModule __instance, CableLink _link) => SfpSpeed.Apply(__instance, _link, "InsertDirectly");
     }
 
     [HarmonyPatch(typeof(CableLink), nameof(CableLink.InsertSFP))]
     internal static class PatchInsertSFP
     {
-        private static void Postfix(CableLink __instance, float speed, int type, SFPModule module) => SfpSpeed.Apply(module, __instance);
+        private static void Postfix(CableLink __instance, float speed, int type, SFPModule module) => SfpSpeed.Apply(module, __instance, "CableLink.InsertSFP");
+    }
+
+    // Diagnostic: dump a port's full state when hovered (rate-limited), so we can see
+    // exactly where the 0/0 comes from on a connected custom port.
+    [HarmonyPatch(typeof(CableLink), nameof(CableLink.OnHoverOver))]
+    internal static class PatchCableHoverDump
+    {
+        private static float _last;
+        private static void Postfix(CableLink __instance)
+        {
+            if (!TierConfig.LogPortDetails) return;
+            float now = Time.unscaledTime;
+            if (now - _last < 1.0f) return;
+            _last = now;
+            float cs = -1f; int sfpIn = -1, sfpSup = -1, swType = -2, srvType = -2; float sfpSpd = -1f; int sfpTy = -1;
+            Core.TrySet(() => cs = __instance.connectionSpeed, "");
+            Core.TrySet(() => sfpIn = __instance.sfpTypeInserted, "");
+            Core.TrySet(() => sfpSup = __instance.sfpTypeSupported, "");
+            Core.TrySet(() => { if (__instance.parentSwitch != null) swType = __instance.parentSwitch.switchType; }, "");
+            Core.TrySet(() => { if (__instance.parentServer != null) srvType = __instance.parentServer.serverType; }, "");
+            Core.TrySet(() => { if (__instance.insertedSFP != null) { sfpSpd = __instance.insertedSFP.speed; sfpTy = __instance.insertedSFP.sfpType; } }, "");
+            MelonLogger.Msg($"DCP hover port: connSpeed={cs} sfpInserted={sfpIn} sfpSupported={sfpSup} switchType={swType} serverType={srvType} insertedSFP.speed={sfpSpd} insertedSFP.sfpType={sfpTy}");
+        }
     }
 
     // Upgrade each module as it's taken out of one of our custom 5-packs.

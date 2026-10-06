@@ -7,7 +7,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
 
-[assembly: MelonInfo(typeof(DataCenterPlus.Core), "DataCenterPlus", "1.0.10", "brzb0 + contributors")]
+[assembly: MelonInfo(typeof(DataCenterPlus.Core), "DataCenterPlus", "1.0.11", "brzb0 + contributors")]
 [assembly: MelonGame("Waseku", "Data Center")]
 
 namespace DataCenterPlus

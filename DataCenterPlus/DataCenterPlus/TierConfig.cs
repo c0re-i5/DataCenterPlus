@@ -90,7 +90,7 @@ namespace DataCenterPlus
 
         // Verbose logging of every cloned device's ports (type/speed/flags). Leave on
         // while tuning compatibility; set false once things work to reduce log noise.
-        internal const bool LogPortDetails = true;
+        internal static readonly bool LogPortDetails = true;
 
         // Vanilla patch panels cap each port at ~100 Gbps, which bottlenecks 400G links.
         // When true, every patch panel's ports have their rated speed raised on placement.
