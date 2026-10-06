@@ -7,7 +7,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
 
-[assembly: MelonInfo(typeof(DataCenterPlus.Core), "DataCenterPlus", "1.1.0", "brzb0 + contributors")]
+[assembly: MelonInfo(typeof(DataCenterPlus.Core), "DataCenterPlus", "1.2.0", "brzb0 + contributors")]
 [assembly: MelonGame("Waseku", "Data Center")]
 
 namespace DataCenterPlus
@@ -23,6 +23,7 @@ namespace DataCenterPlus
         public override void OnInitializeMelon()
         {
             ClassInjector.RegisterTypeInIl2Cpp<ShopButtonHandler>();
+            ClassInjector.RegisterTypeInIl2Cpp<DispatchButtonHandler>();
         }
 
         // ---------------------------------------------------------------- REGISTRY

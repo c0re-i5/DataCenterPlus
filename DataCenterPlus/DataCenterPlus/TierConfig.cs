@@ -97,6 +97,21 @@ namespace DataCenterPlus
         internal static readonly bool  RaisePatchPanelCap   = true;
         internal const float PatchPanelPortSpeedGbps = 400f;
 
+        // ------------------------------------------------ DISPATCH-ALL TECHNICIAN BUTTON
+        // Adds a "Send Tech: All" button to the Asset Management screen that sends a
+        // technician to every device needing one (EOL and/or broken) in one click —
+        // instead of clicking thousands individually. Already-assigned devices are
+        // skipped; the game still charges the per-technician cost and queues the jobs.
+        // The game's existing "add all broken to queue" button is also extended to EOL.
+        internal const bool DispatchIncludeEol    = true;   // devices at end-of-life (eolTime <= 0)
+        internal const bool DispatchIncludeBroken = true;   // broken devices (isBroken)
+        internal const bool DispatchIncludeWarningSigns = true; // devices showing a warning/error sign
+        internal static readonly string DispatchButtonLabel = "Send Tech: All";
+        // Position offset (pixels) of the injected button from the screen's Return button.
+        internal static readonly Vector2 DispatchButtonOffset = new Vector2(0f, 70f);
+
+
+
 
         internal const string ShopSectionName = "HL Mods";
     }
