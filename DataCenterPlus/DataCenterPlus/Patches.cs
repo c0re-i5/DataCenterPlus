@@ -157,6 +157,19 @@ namespace DataCenterPlus
         }
     }
 
+    // Resolve our synthetic name UIDs to the item's DisplayName so hover tooltips,
+    // labels and any other localisation lookups show the custom name.
+    [HarmonyPatch(typeof(Localisation), nameof(Localisation.ReturnTextByID))]
+    internal static class PatchReturnTextByID
+    {
+        private static void Postfix(int _uid, ref string __result)
+        {
+            if (_uid < DeviceRegistry.NAME_UID_BASE) return;
+            if (DeviceRegistry.TryGet(_uid - DeviceRegistry.NAME_UID_BASE, out var e))
+                __result = e.DisplayName;
+        }
+    }
+
     // --------------------------------------------------------------- DEVICE BEHAVIOUR
     [HarmonyPatch(typeof(NetworkSwitch), nameof(NetworkSwitch.ButtonShowNetworkSwitchConfig))]
     internal static class PatchConfigButton
@@ -194,8 +207,8 @@ namespace DataCenterPlus
             Core.TrySet(() => __instance.switchId = entry.DisplayName, "switch label");
             if (__instance.txtScreen != null)
                 Core.TrySet(() => __instance.txtScreen.text = entry.DisplayName, "switch screen text");
-            // Re-assert port types after the game's Awake/insert logic has run.
-            Core.ConfigurePorts(__instance.gameObject, entry.PortSfpType, 0f, $"net {entry.CustomId} (rack)");
+            // Re-assert port types + rated speed after the game's Awake/insert logic.
+            Core.ConfigurePorts(__instance.gameObject, entry.PortSfpType, entry.SpeedGbps, $"net {entry.CustomId} (rack)");
         }
     }
 

@@ -7,7 +7,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
 
-[assembly: MelonInfo(typeof(DataCenterPlus.Core), "DataCenterPlus", "1.0.6", "brzb0 + contributors")]
+[assembly: MelonInfo(typeof(DataCenterPlus.Core), "DataCenterPlus", "1.0.7", "brzb0 + contributors")]
 [assembly: MelonGame("Waseku", "Data Center")]
 
 namespace DataCenterPlus
@@ -330,7 +330,8 @@ namespace DataCenterPlus
                 return;
             }
             // Prefer a fiber QSFP cable as the clone base.
-            int best = PickByName(cables, "qsfp", "fiber", "40");
+            // Candidates use British spelling "Fibre"; prefer the 4-lane (QSFP) fibre cable.
+            int best = PickByName(cables, "fibre 4", "fibre", "qsfp");
             if (best < 0) best = PickByName(cables, "fiber");
             if (best < 0) return;
             BaseCableType = best;
@@ -413,6 +414,7 @@ namespace DataCenterPlus
             var usable = clone.GetComponent<UsableObject>();
             if (usable != null) TrySet(() => usable.prefabID = entry.CustomId, "cable.prefabID");
 
+            ApplyNameAndHover(clone, entry);
             ApplyTint(clone, entry.Color);
             return clone;
         }
@@ -461,9 +463,11 @@ namespace DataCenterPlus
             var usable = clone.GetComponent<UsableObject>();
             if (usable != null) TrySet(() => usable.prefabID = entry.CustomId, "net.prefabID");
 
-            // Re-type the device's SFP ports so they accept this tier's transceiver.
-            ConfigurePorts(clone, entry.PortSfpType, 0f, $"net {entry.CustomId}");
+            // Re-type the device's SFP ports so they accept this tier's transceiver,
+            // and set the rated port speed so empty ports display 0/<tier> like vanilla.
+            ConfigurePorts(clone, entry.PortSfpType, entry.SpeedGbps, $"net {entry.CustomId}");
 
+            ApplyNameAndHover(clone, entry);
             ApplyTint(clone, entry.Color);
             return clone;
         }
@@ -500,6 +504,7 @@ namespace DataCenterPlus
             float portSpeed = TierConfig.ApplyServerPortSpeed ? TierConfig.ServerPortSpeedGbps : 0f;
             ConfigurePorts(clone, TierConfig.ServerPortSfpType, portSpeed, $"server {entry.CustomId}");
 
+            ApplyNameAndHover(clone, entry);
             ApplyTint(clone, entry.Color);
             return clone;
         }
@@ -519,6 +524,7 @@ namespace DataCenterPlus
             var usable = clone.GetComponent<UsableObject>();
             if (usable != null) TrySet(() => usable.prefabID = entry.CustomId, "sfp.prefabID");
 
+            ApplyNameAndHover(clone, entry);
             return clone;
         }
 
@@ -540,8 +546,22 @@ namespace DataCenterPlus
             var usable = clone.GetComponent<UsableObject>();
             if (usable != null) TrySet(() => usable.prefabID = entry.CustomId, "sfpbox.prefabID");
 
+            ApplyNameAndHover(clone, entry);
             ApplyTint(clone, entry.Color);
             return clone;
+        }
+
+        // Gives a cloned item a hover/label name via a synthetic localisation UID that
+        // our Localisation.ReturnTextByID patch resolves to the entry's DisplayName.
+        internal static void ApplyNameAndHover(GameObject clone, DeviceRegistry.Entry entry)
+        {
+            if (clone == null) return;
+            var usable = clone.GetComponent<UsableObject>();
+            if (usable == null) return;
+            int uid = DeviceRegistry.NAME_UID_BASE + entry.CustomId;
+            TrySet(() => usable.onHoverTextUID = uid, "onHoverTextUID");
+            TrySet(() => usable.toolTipLocalisationID = uid, "toolTipLocalisationID");
+            TrySet(() => usable.labelText = entry.DisplayName, "labelText");
         }
 
         internal static void ApplyTint(GameObject root, Color tint)

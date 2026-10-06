@@ -17,6 +17,10 @@ namespace DataCenterPlus
         internal const int SFPBOX_ID_BASE   = 2100;
         internal const int CABLE_ID_BASE    = 2200;
 
+        // Base for synthetic localisation UIDs used to show custom item names on hover.
+        // Kept far above any real game UID. NameUID = NAME_UID_BASE + CustomId.
+        internal const int NAME_UID_BASE    = 900000;
+
         internal sealed class Entry
         {
             internal int        CustomId;      // the custom type/prefab ID
