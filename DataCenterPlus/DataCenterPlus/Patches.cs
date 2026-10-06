@@ -258,10 +258,9 @@ namespace DataCenterPlus
             if (!DeviceRegistry.TryGet(pid, out var e) || e.Kind != DeviceKind.Sfp) return;
             if (e.SpeedGbps > 0f)
             {
-                float before = -1f; Core.TrySet(() => before = link.connectionSpeed, "");
                 Core.TrySet(() => link.SetConnectionSpeed(e.SpeedGbps / TierConfig.SpeedDivisor), "insert link speed");
-                float after = -1f; Core.TrySet(() => after = link.connectionSpeed, "");
-                MelonLogger.Msg($"DCP insert[{via}]: tier prefabID={pid} link.connSpeed {before}->{after}");
+                if (TierConfig.LogPortDetails)
+                    MelonLogger.Msg($"DCP insert[{via}]: tier prefabID={pid} -> {e.SpeedGbps}Gbps");
             }
         }
     }

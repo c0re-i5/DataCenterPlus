@@ -88,9 +88,9 @@ namespace DataCenterPlus
         // values are divided by this before being written to connectionSpeed.
         internal const float SpeedDivisor = 5f;
 
-        // Verbose logging of every cloned device's ports (type/speed/flags). Leave on
-        // while tuning compatibility; set false once things work to reduce log noise.
-        internal static readonly bool LogPortDetails = true;
+        // Verbose diagnostics (port dumps, candidate lists, hover/insert logs). Off for
+        // release; set true to troubleshoot. The concise startup summary always logs.
+        internal static readonly bool LogPortDetails = false;
 
         // Vanilla patch panels cap each port at ~100 Gbps, which bottlenecks 400G links.
         // When true, every patch panel's ports have their rated speed raised on placement.

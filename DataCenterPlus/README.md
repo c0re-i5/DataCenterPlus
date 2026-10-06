@@ -123,19 +123,30 @@ IOPS at startup — check the MelonLoader console. If they're 0, set
 
 ## How it works (architecture)
 
-Identical pattern to NetworkingPlus, generalised across device kinds:
+Generalised from the NetworkingPlus device pattern across device kinds. Key design rules learned
+from the game's own traffic model:
 
-- **Registry setup** (`MainGameManager.Awake`/`Start`): discover the base QSFP+ switch, base SFP,
-  and every server prefab; register custom type IDs; extend `switchesPrefabs[] / routersPrefabs[] /
-  firewallsPrefabs[] / serverPrefabs[] / sfpPrefabs[]` with inactive templates (for save/load).
-- **Shop injection** (`OnSceneWasLoaded`): clone the base shop buttons for each custom item.
-- **Custom buy flow** (`ComputerShop.ButtonBuyShopItem`): spawn + cart handling for custom IDs,
-  with an injected `CartButtonHandler` for the +/- buttons.
-- **Behaviour patches**: route Router/Firewall config UIs, set rack labels, **force server IOPS**
-  (`Server.Awake` / `ServerInsertedInRack`), and **stamp link bandwidth** when a custom SFP is
-  inserted (`CableLink.InsertSFP` → `SetConnectionSpeed`).
-- **Save/load**: `GetServerPrefab` / `GetSwitchPrefab` / `Return*NameFromType` patches resolve
-  custom types.
+- **Keep native type fields; differentiate by a stat.** Custom type IDs break the game's native
+  lookup tables (speed, cable compatibility, customer↔app matching). So:
+  - **Transceivers** keep the native QSFP `sfpType` (cables/boxes/ports accept them); the tier is
+    carried by `prefabID` + the module's `speed`, applied on the real insert path
+    (`SFPModule.InsertedInSFPPort`).
+  - **Servers** keep the base `serverType` (which *is* the app type `0–3` the customer matches on);
+    the HPC variant is identified by `prefabID`, and only `maxProcessingSpeed` (IOPS) is boosted.
+  - **Switches/routers/firewalls** never touch `switchId` (the unique network-graph node ID);
+    custom identity rides on `switchType` + `prefabID`, and the tier name shows via the hover tooltip.
+- **Registry setup** (`MainGameManager.Awake`/`Start`): discover the base QSFP switch / SFP / SFP box /
+  fibre cable / server prefabs; register custom IDs; extend the prefab arrays with inactive templates.
+- **Shop injection** (`OnSceneWasLoaded`): clone the closest base shop card per kind; purchases go
+  through the **vanilla** `ButtonBuyShopItem` (no custom cart), with prefabs resolved via the
+  `Get*Prefab` patches — so the game's own current-version buy/spawn/save logic runs.
+- **Speeds**: the game stores port speed as *displayed Gbps ÷ 5*; all speed writes use that factor.
+  Empty SFP ports read `0/0`; the inserted transceiver drives the port and link speed.
+- **Hover names**: a synthetic localisation UID per item, resolved by a `Localisation.ReturnTextByID`
+  patch, so every custom item shows its name on hover.
+- **Names/prefabs for save/load**: `Get{Server,Switch,Router,Firewall,Sfp,SfpBox,CableSpinner}Prefab`
+  and `Return{Server,Switch}NameFromType` patches resolve custom IDs.
+- **Patch panels**: per-port rated speed raised (default 400 Gbps) so 400G links aren't capped at 100.
 
 ### Project layout
 ```
@@ -154,16 +165,15 @@ DataCenterPlus/
 
 ## Status & testing notes
 
-This mod **compiles cleanly against the real game assembly**, so every game API it uses is
-type‑checked. It has **not** yet been runtime‑tested in‑game (built in a headless environment).
-When you test on your Steam machine, watch the MelonLoader console for the
-`DataCenterPlus: …` lines — they report the base switch/SFP found and each server's base→boosted
-IOPS, which is the quickest way to confirm discovery worked and to tune values.
+**Verified working in‑game** (v1.1.0): all items buy, install, display correct speeds/IOPS, and
+**carry traffic** end‑to‑end (HPC server → tier switch + transceiver + cable → customer). The mod
+compiles against the real game assembly, so every API it uses is type‑checked.
 
-Two things worth a specific look in‑game:
-- **Transceivers:** confirm a bought **5-pack** opens, the modules can be taken out and inserted into
-  a cable port, and the link then reports the expected 100/400 Gbps. (Edge case: an *unused* pack left
-  in the world after a save/reload may revert to the base speed, since the pack tag isn't serialised;
-  modules already inserted persist correctly via their custom `sfpType`.)
-- **Shop icons:** confirm the recoloured icons read clearly; adjust the tier/accent colours in
-  `TierConfig.cs` to taste.
+The MelonLoader console logs a concise startup summary (`DataCenterPlus: registered — …`,
+per‑server base→boosted IOPS, `injected N shop item(s)`). For deep troubleshooting, set
+`LogPortDetails = true` in `TierConfig.cs` to re‑enable verbose port/hover/insert diagnostics.
+
+Known edge to re‑check after a game update or on a fresh save:
+- **Save/load of HPC servers:** a reloaded HPC server keeps its boosted IOPS as long as the game
+  serialises `maxProcessingSpeed`; if a future update changes that, a load‑time re‑boost hook can be
+  added (the server is identified by `prefabID`).
