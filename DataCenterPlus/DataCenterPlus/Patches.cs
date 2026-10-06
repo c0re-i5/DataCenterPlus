@@ -256,7 +256,7 @@ namespace DataCenterPlus
             var usable = module.GetComponent<UsableObject>();
             if (usable == null) return;
             if (!DeviceRegistry.TryGet(usable.prefabID, out var e) || e.Kind != DeviceKind.Sfp) return;
-            if (e.SpeedGbps > 0f) Core.TrySet(() => __instance.SetConnectionSpeed(e.SpeedGbps), "set link speed");
+            if (e.SpeedGbps > 0f) Core.TrySet(() => __instance.SetConnectionSpeed(e.SpeedGbps / TierConfig.SpeedDivisor), "set link speed");
         }
     }
 

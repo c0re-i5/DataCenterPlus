@@ -7,7 +7,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
 
-[assembly: MelonInfo(typeof(DataCenterPlus.Core), "DataCenterPlus", "1.0.8", "brzb0 + contributors")]
+[assembly: MelonInfo(typeof(DataCenterPlus.Core), "DataCenterPlus", "1.0.9", "brzb0 + contributors")]
 [assembly: MelonGame("Waseku", "Data Center")]
 
 namespace DataCenterPlus
@@ -63,26 +63,27 @@ namespace DataCenterPlus
 
         private static int Len(Il2CppReferenceArray<GameObject> a) => a?.Length ?? -1;
 
-        // Logs all prefab names in an array (to identify the right clone base), then
-        // returns the first index whose name contains any keyword, else first non-null.
+        // Logs all prefab names, then returns the index of the first prefab matching the
+        // HIGHEST-priority keyword (keywords are tried in order), else first non-null.
         private static int PickByName(Il2CppReferenceArray<GameObject> arr, params string[] keywords)
         {
             if (arr == null) return -1;
-            int firstNonNull = -1, match = -1;
+            int firstNonNull = -1;
             var names = new System.Text.StringBuilder();
             for (int i = 0; i < arr.Length; i++)
             {
                 if (arr[i] == null) continue;
                 if (firstNonNull < 0) firstNonNull = i;
-                string ln = arr[i].name.ToLowerInvariant();
                 names.Append($" [{i}]{arr[i].name}");
-                if (match < 0)
-                    foreach (var k in keywords)
-                        if (ln.Contains(k)) { match = i; break; }
             }
             if (TierConfig.LogPortDetails)
                 MelonLogger.Msg($"DataCenterPlus: candidates:{names}");
-            return match >= 0 ? match : firstNonNull;
+
+            foreach (var k in keywords)
+                for (int i = 0; i < arr.Length; i++)
+                    if (arr[i] != null && arr[i].name.ToLowerInvariant().Contains(k))
+                        return i;
+            return firstNonNull;
         }
 
         private static void SetupNetworking(MainGameManager mgm)
@@ -168,7 +169,7 @@ namespace DataCenterPlus
                 { TrySet(() => lk.sfpTypeSupported = portSfpType, "port.sfpTypeSupported"); changed++; }
 
                 if (portSpeed > 0f)
-                    TrySet(() => lk.SetConnectionSpeed(portSpeed), "port.connectionSpeed");
+                    TrySet(() => lk.SetConnectionSpeed(portSpeed / TierConfig.SpeedDivisor), "port.connectionSpeed");
             }
             if (TierConfig.LogPortDetails)
                 MelonLogger.Msg($"DataCenterPlus: {label} ports={count} sfpPorts={sfpPorts} retyped={changed} ->{portSfpType}{sample}");
@@ -519,7 +520,7 @@ namespace DataCenterPlus
 
             var sfp = clone.GetComponent<SFPModule>();
             if (sfp != null)
-                TrySet(() => { sfp.speed = entry.SpeedGbps; sfp.sfpType = entry.CustomId; }, "sfp.speed");
+                TrySet(() => { sfp.speed = entry.SpeedGbps / TierConfig.SpeedDivisor; sfp.sfpType = entry.CustomId; }, "sfp.speed");
 
             var usable = clone.GetComponent<UsableObject>();
             if (usable != null) TrySet(() => usable.prefabID = entry.CustomId, "sfp.prefabID");
@@ -540,7 +541,7 @@ namespace DataCenterPlus
             // modules. A tag marks the pack so we upgrade each module as it's taken out.
             var tag = clone.AddComponent<DcpPackTag>();
             tag.moduleId = entry.ModuleId;
-            tag.speed    = entry.SpeedGbps;
+            tag.speed    = entry.SpeedGbps / TierConfig.SpeedDivisor;
             tag.sfpType  = entry.ModuleId;
 
             var usable = clone.GetComponent<UsableObject>();

@@ -82,6 +82,11 @@ namespace DataCenterPlus
         internal const float ServerPortSpeedGbps  = 25f;   // onboard port speed for HPC servers
         internal const int   ServerPortSfpType    = -1;    // -1 = don't change port SFP type
 
+        // The game stores port speed as (displayed Gbps ÷ 5): e.g. a 1 GbE port has
+        // connectionSpeed 0.2, a 100 Gbps fibre patch-panel port has 20. All our Gbps
+        // values are divided by this before being written to connectionSpeed.
+        internal const float SpeedDivisor = 5f;
+
         // Verbose logging of every cloned device's ports (type/speed/flags). Leave on
         // while tuning compatibility; set false once things work to reduce log noise.
         internal const bool LogPortDetails = true;
