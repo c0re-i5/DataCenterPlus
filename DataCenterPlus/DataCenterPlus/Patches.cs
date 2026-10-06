@@ -7,15 +7,6 @@ using Object = UnityEngine.Object;
 
 namespace DataCenterPlus
 {
-    // Marks a cloned SFP box (5-pack) so modules taken out of it get upgraded.
-    public class DcpPackTag : MonoBehaviour
-    {
-        public DcpPackTag(IntPtr ptr) : base(ptr) { }
-        internal int   moduleId;
-        internal float speed;
-        internal int   sfpType;
-    }
-
     // Explicit click handler for our injected shop buttons. It simply forwards to the
     // vanilla ButtonBuyShopItem, so the game's own (current-version) buy/cart/spawn
     // logic runs — we only supply a custom itemID that resolves to our prefab.
@@ -207,8 +198,9 @@ namespace DataCenterPlus
             Core.TrySet(() => __instance.switchId = entry.DisplayName, "switch label");
             if (__instance.txtScreen != null)
                 Core.TrySet(() => __instance.txtScreen.text = entry.DisplayName, "switch screen text");
-            // Re-assert port types + rated speed after the game's Awake/insert logic.
-            Core.ConfigurePorts(__instance.gameObject, entry.PortSfpType, entry.SpeedGbps, $"net {entry.CustomId} (rack)");
+            // Re-assert port config after the game's Awake/insert logic (ports stay 0/0
+            // when empty; the inserted transceiver drives the speed).
+            Core.ConfigurePorts(__instance.gameObject, entry.PortSfpType, 0f, $"net {entry.CustomId} (rack)");
         }
     }
 
@@ -254,17 +246,17 @@ namespace DataCenterPlus
     {
         internal static void Apply(SFPModule module, CableLink link, string via)
         {
-            if (module == null || link == null) { MelonLogger.Msg($"DCP insert[{via}]: null module/link"); return; }
-            int pid = -1; float mspd = -1f; int mtype = -1; float before = -1f;
+            if (module == null || link == null) return;
+            int pid = -1;
             Core.TrySet(() => pid = module.GetComponent<UsableObject>().prefabID, "");
-            Core.TrySet(() => mspd = module.speed, "");
-            Core.TrySet(() => mtype = module.sfpType, "");
-            Core.TrySet(() => before = link.connectionSpeed, "");
-            bool mine = DeviceRegistry.TryGet(pid, out var e) && e.Kind == DeviceKind.Sfp;
-            if (mine && e.SpeedGbps > 0f)
+            if (!DeviceRegistry.TryGet(pid, out var e) || e.Kind != DeviceKind.Sfp) return;
+            if (e.SpeedGbps > 0f)
+            {
+                float before = -1f; Core.TrySet(() => before = link.connectionSpeed, "");
                 Core.TrySet(() => link.SetConnectionSpeed(e.SpeedGbps / TierConfig.SpeedDivisor), "insert link speed");
-            float after = -1f; Core.TrySet(() => after = link.connectionSpeed, "");
-            MelonLogger.Msg($"DCP insert[{via}]: prefabID={pid} mine={mine} module.speed={mspd} module.sfpType={mtype} link.connSpeed {before}->{after}");
+                float after = -1f; Core.TrySet(() => after = link.connectionSpeed, "");
+                MelonLogger.Msg($"DCP insert[{via}]: tier prefabID={pid} link.connSpeed {before}->{after}");
+            }
         }
     }
 
@@ -309,33 +301,25 @@ namespace DataCenterPlus
         }
     }
 
-    // Upgrade each module as it's taken out of one of our custom 5-packs.
+    // Upgrade each module taken out of our custom 5-packs. We identify the pack by its
+    // native prefabID (which survives Instantiate, unlike injected-component fields) and
+    // look up the tier speed/module-id from the registry, then stamp them on the module.
     [HarmonyPatch(typeof(SFPBox), nameof(SFPBox.TakeSFPFromBox))]
     internal static class PatchTakeSFPFromBox
     {
         private static void Postfix(SFPBox __instance, ref SFPModule __result)
         {
             if (__result == null) return;
-            var tag = __instance.GetComponent<DcpPackTag>();
-            if (tag == null) return;
-            var module = __result;
-            // Keep the native sfpType (QSFP) for compatibility; tag the module via
-            // prefabID + speed so our insert hook recognises it and applies the tier speed.
-            Core.TrySet(() => module.speed = tag.speed, "upgrade pack module speed");
-            var usable = module.GetComponent<UsableObject>();
-            if (usable != null) Core.TrySet(() => usable.prefabID = tag.moduleId, "pack module prefabID");
-        }
-    }
+            var boxUsable = __instance.GetComponent<UsableObject>();
+            if (boxUsable == null) return;
+            if (!DeviceRegistry.TryGet(boxUsable.prefabID, out var box) || box.Kind != DeviceKind.SfpBox) return;
 
-    // Let our custom packs accept their own (custom-typed) modules back into the box.
-    [HarmonyPatch(typeof(SFPBox), nameof(SFPBox.CanAcceptSFP))]
-    internal static class PatchCanAcceptSFP
-    {
-        private static void Postfix(SFPBox __instance, int sfpType, ref bool __result)
-        {
-            if (__result) return;
-            var tag = __instance.GetComponent<DcpPackTag>();
-            if (tag != null && sfpType == tag.sfpType) __result = true;
+            var module = __result;
+            // insertedSFP.speed drives the port's connectionSpeed natively, so this alone
+            // makes the link report the tier speed when the module is inserted.
+            Core.TrySet(() => module.speed = box.SpeedGbps / TierConfig.SpeedDivisor, "pack module speed");
+            var usable = module.GetComponent<UsableObject>();
+            if (usable != null) Core.TrySet(() => usable.prefabID = box.ModuleId, "pack module prefabID");
         }
     }
 

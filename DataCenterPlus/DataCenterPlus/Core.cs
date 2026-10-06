@@ -7,7 +7,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
 
-[assembly: MelonInfo(typeof(DataCenterPlus.Core), "DataCenterPlus", "1.0.11", "brzb0 + contributors")]
+[assembly: MelonInfo(typeof(DataCenterPlus.Core), "DataCenterPlus", "1.0.12", "brzb0 + contributors")]
 [assembly: MelonGame("Waseku", "Data Center")]
 
 namespace DataCenterPlus
@@ -23,7 +23,6 @@ namespace DataCenterPlus
         public override void OnInitializeMelon()
         {
             ClassInjector.RegisterTypeInIl2Cpp<ShopButtonHandler>();
-            ClassInjector.RegisterTypeInIl2Cpp<DcpPackTag>();
         }
 
         // ---------------------------------------------------------------- REGISTRY
@@ -464,9 +463,9 @@ namespace DataCenterPlus
             var usable = clone.GetComponent<UsableObject>();
             if (usable != null) TrySet(() => usable.prefabID = entry.CustomId, "net.prefabID");
 
-            // Re-type the device's SFP ports so they accept this tier's transceiver,
-            // and set the rated port speed so empty ports display 0/<tier> like vanilla.
-            ConfigurePorts(clone, entry.PortSfpType, entry.SpeedGbps, $"net {entry.CustomId}");
+            // SFP ports stay 0/0 when empty (vanilla behaviour) — the inserted
+            // transceiver's speed drives the port. We don't set a rated port speed here.
+            ConfigurePorts(clone, entry.PortSfpType, 0f, $"net {entry.CustomId}");
 
             ApplyNameAndHover(clone, entry);
             ApplyTint(clone, entry.Color);
@@ -540,12 +539,8 @@ namespace DataCenterPlus
             clone.name = $"DCP_sfpbox_{entry.CustomId}";
 
             // Keep the base sfpBoxType so the vanilla box still fills itself with 5
-            // modules. A tag marks the pack so we upgrade each module as it's taken out.
-            var tag = clone.AddComponent<DcpPackTag>();
-            tag.moduleId = entry.ModuleId;
-            tag.speed    = entry.SpeedGbps / TierConfig.SpeedDivisor;
-            tag.sfpType  = entry.ModuleId;
-
+            // modules. The box is identified by its prefabID (set below); TakeSFPFromBox
+            // looks that up to stamp the tier speed on each dispensed module.
             var usable = clone.GetComponent<UsableObject>();
             if (usable != null) TrySet(() => usable.prefabID = entry.CustomId, "sfpbox.prefabID");
 
