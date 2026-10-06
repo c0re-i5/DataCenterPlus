@@ -166,14 +166,10 @@ DataCenterPlus/
 ## Status & testing notes
 
 **Verified working in‑game** (v1.1.0): all items buy, install, display correct speeds/IOPS, and
-**carry traffic** end‑to‑end (HPC server → tier switch + transceiver + cable → customer). The mod
-compiles against the real game assembly, so every API it uses is type‑checked.
+**carry traffic** end‑to‑end (HPC server → tier switch + transceiver + cable → customer).
+**Save/load is confirmed** — placed devices keep their type, names, speeds and boosted IOPS across a
+quit/reload. The mod compiles against the real game assembly, so every API it uses is type‑checked.
 
 The MelonLoader console logs a concise startup summary (`DataCenterPlus: registered — …`,
 per‑server base→boosted IOPS, `injected N shop item(s)`). For deep troubleshooting, set
 `LogPortDetails = true` in `TierConfig.cs` to re‑enable verbose port/hover/insert diagnostics.
-
-Known edge to re‑check after a game update or on a fresh save:
-- **Save/load of HPC servers:** a reloaded HPC server keeps its boosted IOPS as long as the game
-  serialises `maxProcessingSpeed`; if a future update changes that, a load‑time re‑boost hook can be
-  added (the server is identified by `prefabID`).
