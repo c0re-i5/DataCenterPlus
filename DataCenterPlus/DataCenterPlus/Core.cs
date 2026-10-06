@@ -7,7 +7,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
 
-[assembly: MelonInfo(typeof(DataCenterPlus.Core), "DataCenterPlus", "1.0.14", "brzb0 + contributors")]
+[assembly: MelonInfo(typeof(DataCenterPlus.Core), "DataCenterPlus", "1.0.15", "brzb0 + contributors")]
 [assembly: MelonGame("Waseku", "Data Center")]
 
 namespace DataCenterPlus
@@ -186,11 +186,14 @@ namespace DataCenterPlus
 
                 float baseIops = 0f;
                 int shopType = (int)PlayerManager.ObjectInHand.Server3U;
+                int baseServerType = -1, baseAppId = -1;
                 var srv = go.GetComponent<Server>();
                 if (srv != null)
                 {
                     baseIops = srv.maxProcessingSpeed;
                     try { shopType = (int)srv.objectInHandType; } catch { }
+                    try { baseServerType = srv.serverType; } catch { }
+                    try { baseAppId = srv.appID; } catch { }
                 }
 
                 float target = ComputeTargetIops(baseIops);
@@ -212,7 +215,7 @@ namespace DataCenterPlus
                     TargetIops  = target,
                 });
 
-                MelonLogger.Msg($"DataCenterPlus: server '{baseName}' baseIOPS={baseIops} -> {target} (type {id}, shopType {shopType})");
+                MelonLogger.Msg($"DataCenterPlus: server[{i}] '{baseName}' baseServerType={baseServerType} baseAppID={baseAppId} baseIOPS={baseIops} -> {target} (customId {id}, shopType {shopType})");
             }
 
             mgm.serverPrefabs = ExtendWithTemplates(mgm, mgm.serverPrefabs, DeviceKind.Server);

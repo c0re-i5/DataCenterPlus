@@ -333,19 +333,31 @@ namespace DataCenterPlus
         private static void Postfix(MainGameManager __instance, INetworkEndpoint server, ref Il2CppStructArray<int> __result)
         {
             if (server == null) return;
-            int sType = -1;
+            int sType = -1, appId = -1;
             Core.TrySet(() => sType = server.serverType, "");
-            if (!DeviceRegistry.TryGet(sType, out var e) || e.Kind != DeviceKind.Server) return;
-
-            int len = __result != null ? __result.Length : 0;
-            if (len == 0 && MainGameManager.defaultPortsPerServerType != null
-                && e.BaseType >= 0 && e.BaseType < MainGameManager.defaultPortsPerServerType.Length)
-            {
-                __result = MainGameManager.defaultPortsPerServerType[e.BaseType];
-                len = __result != null ? __result.Length : 0;
-            }
+            Core.TrySet(() => appId = server.appID, "");
+            int len = __result != null ? __result.Length : -1;
             if (TierConfig.LogPortDetails)
-                MelonLogger.Msg($"DCP reqPorts: serverType={sType} baseType={e.BaseType} ports={len}");
+                MelonLogger.Msg($"DCP reqPorts: serverType={sType} appID={appId} ports={len}");
+        }
+    }
+
+    // Diagnostics: what server type / app does the customer expect for each IP?
+    [HarmonyPatch(typeof(CustomerBase), nameof(CustomerBase.GetServerTypeForIP))]
+    internal static class PatchGetServerTypeForIP
+    {
+        private static void Postfix(string ip, ref int __result)
+        {
+            if (TierConfig.LogPortDetails) MelonLogger.Msg($"DCP custBase.GetServerTypeForIP({ip}) = {__result}");
+        }
+    }
+
+    [HarmonyPatch(typeof(CustomerBase), nameof(CustomerBase.UpdateSpeedOnCustomerBaseApp))]
+    internal static class PatchUpdateSpeedOnApp
+    {
+        private static void Postfix(int appID, float speed)
+        {
+            if (TierConfig.LogPortDetails) MelonLogger.Msg($"DCP custBase.UpdateSpeedOnApp(app={appID}, speed={speed})");
         }
     }
 
