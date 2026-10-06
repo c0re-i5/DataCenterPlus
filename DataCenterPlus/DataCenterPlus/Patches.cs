@@ -1,6 +1,7 @@
 using System;
 using HarmonyLib;
 using Il2Cpp;
+using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using MelonLoader;
 using UnityEngine;
 using Object = UnityEngine.Object;
@@ -320,6 +321,30 @@ namespace DataCenterPlus
             Core.TrySet(() => module.speed = box.SpeedGbps / TierConfig.SpeedDivisor, "pack module speed");
             var usable = module.GetComponent<UsableObject>();
             if (usable != null) Core.TrySet(() => usable.prefabID = box.ModuleId, "pack module prefabID");
+        }
+    }
+
+    // Backup + diagnostics: ensure a custom server reports its base type's required
+    // ports even if the extended array somehow isn't consulted.
+    [HarmonyPatch(typeof(MainGameManager), nameof(MainGameManager.GetRequiredPortsForServer))]
+    internal static class PatchGetRequiredPortsForServer
+    {
+        private static void Postfix(MainGameManager __instance, INetworkEndpoint server, ref Il2CppStructArray<int> __result)
+        {
+            if (server == null) return;
+            int sType = -1;
+            Core.TrySet(() => sType = server.serverType, "");
+            if (!DeviceRegistry.TryGet(sType, out var e) || e.Kind != DeviceKind.Server) return;
+
+            int len = __result != null ? __result.Length : 0;
+            if (len == 0 && MainGameManager.defaultPortsPerServerType != null
+                && e.BaseType >= 0 && e.BaseType < MainGameManager.defaultPortsPerServerType.Length)
+            {
+                __result = MainGameManager.defaultPortsPerServerType[e.BaseType];
+                len = __result != null ? __result.Length : 0;
+            }
+            if (TierConfig.LogPortDetails)
+                MelonLogger.Msg($"DCP reqPorts: serverType={sType} baseType={e.BaseType} ports={len}");
         }
     }
 

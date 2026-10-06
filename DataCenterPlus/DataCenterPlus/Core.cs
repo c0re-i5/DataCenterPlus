@@ -7,7 +7,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
 
-[assembly: MelonInfo(typeof(DataCenterPlus.Core), "DataCenterPlus", "1.0.12", "brzb0 + contributors")]
+[assembly: MelonInfo(typeof(DataCenterPlus.Core), "DataCenterPlus", "1.0.13", "brzb0 + contributors")]
 [assembly: MelonGame("Waseku", "Data Center")]
 
 namespace DataCenterPlus
@@ -216,6 +216,38 @@ namespace DataCenterPlus
             }
 
             mgm.serverPrefabs = ExtendWithTemplates(mgm, mgm.serverPrefabs, DeviceKind.Server);
+
+            // The traffic sim looks up each server's required network ports via
+            // defaultPortsPerServerType[serverType]. Our custom serverTypes are out of
+            // that array's bounds, so extend it: custom index -> its base type's ports.
+            // Without this, custom servers have no required ports and carry no traffic.
+            ExtendDefaultPorts(mgm);
+        }
+
+        private static void ExtendDefaultPorts(MainGameManager mgm)
+        {
+            var old = MainGameManager.defaultPortsPerServerType;
+            if (old == null || old.Length == 0)
+            {
+                MelonLogger.Warning("DataCenterPlus: defaultPortsPerServerType empty; custom servers may carry no traffic.");
+                return;
+            }
+            int oldLen = old.Length;
+            int maxId = oldLen - 1;
+            foreach (var kv in DeviceRegistry.Entries)
+                if (kv.Value.Kind == DeviceKind.Server && kv.Value.CustomId > maxId) maxId = kv.Value.CustomId;
+
+            var ext = new Il2CppReferenceArray<Il2CppStructArray<int>>(maxId + 1);
+            for (int i = 0; i < oldLen; i++) ext[i] = old[i];
+            foreach (var kv in DeviceRegistry.Entries)
+            {
+                var e = kv.Value;
+                if (e.Kind != DeviceKind.Server) continue;
+                if (e.BaseType >= 0 && e.BaseType < oldLen)
+                    ext[e.CustomId] = old[e.BaseType];
+            }
+            MainGameManager.defaultPortsPerServerType = ext;
+            MelonLogger.Msg($"DataCenterPlus: extended defaultPortsPerServerType {oldLen} -> {ext.Length}");
         }
 
         internal static float ComputeTargetIops(float baseIops)
