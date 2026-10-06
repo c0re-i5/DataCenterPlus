@@ -219,11 +219,13 @@ namespace DataCenterPlus
         private static void Postfix(Server __instance, ServerSaveData serverSaveData)
         {
             BoostServer.Apply(__instance);
-            int id = __instance.serverType;
-            if (DeviceRegistry.TryGet(id, out var e) && e.Kind == DeviceKind.Server)
+            // Identify HPC server by prefabID (serverType is the base app type now).
+            int pid = -1;
+            Core.TrySet(() => pid = __instance.GetComponent<UsableObject>().prefabID, "");
+            if (DeviceRegistry.TryGet(pid, out var e) && e.Kind == DeviceKind.Server)
             {
                 float portSpeed = TierConfig.ApplyServerPortSpeed ? TierConfig.ServerPortSpeedGbps : 0f;
-                Core.ConfigurePorts(__instance.gameObject, TierConfig.ServerPortSfpType, portSpeed, $"server {id} (rack)");
+                Core.ConfigurePorts(__instance.gameObject, TierConfig.ServerPortSfpType, portSpeed, $"server {pid} (rack)", false);
             }
         }
     }
@@ -233,8 +235,10 @@ namespace DataCenterPlus
         internal static void Apply(Server srv)
         {
             if (srv == null) return;
-            int id = srv.serverType;
-            if (!DeviceRegistry.TryGet(id, out var e) || e.Kind != DeviceKind.Server) return;
+            // Identify the HPC variant by prefabID (serverType is now the base app type).
+            int pid = -1;
+            Core.TrySet(() => pid = srv.GetComponent<UsableObject>().prefabID, "");
+            if (!DeviceRegistry.TryGet(pid, out var e) || e.Kind != DeviceKind.Server) return;
             if (e.TargetIops > 0f && !Mathf.Approximately(srv.maxProcessingSpeed, e.TargetIops))
                 Core.TrySet(() => srv.maxProcessingSpeed = e.TargetIops, "boost server IOPS");
         }
@@ -322,42 +326,6 @@ namespace DataCenterPlus
             Core.TrySet(() => module.speed = box.SpeedGbps / TierConfig.SpeedDivisor, "pack module speed");
             var usable = module.GetComponent<UsableObject>();
             if (usable != null) Core.TrySet(() => usable.prefabID = box.ModuleId, "pack module prefabID");
-        }
-    }
-
-    // Backup + diagnostics: ensure a custom server reports its base type's required
-    // ports even if the extended array somehow isn't consulted.
-    [HarmonyPatch(typeof(MainGameManager), nameof(MainGameManager.GetRequiredPortsForServer))]
-    internal static class PatchGetRequiredPortsForServer
-    {
-        private static void Postfix(MainGameManager __instance, INetworkEndpoint server, ref Il2CppStructArray<int> __result)
-        {
-            if (server == null) return;
-            int sType = -1, appId = -1;
-            Core.TrySet(() => sType = server.serverType, "");
-            Core.TrySet(() => appId = server.appID, "");
-            int len = __result != null ? __result.Length : -1;
-            if (TierConfig.LogPortDetails)
-                MelonLogger.Msg($"DCP reqPorts: serverType={sType} appID={appId} ports={len}");
-        }
-    }
-
-    // Diagnostics: what server type / app does the customer expect for each IP?
-    [HarmonyPatch(typeof(CustomerBase), nameof(CustomerBase.GetServerTypeForIP))]
-    internal static class PatchGetServerTypeForIP
-    {
-        private static void Postfix(string ip, ref int __result)
-        {
-            if (TierConfig.LogPortDetails) MelonLogger.Msg($"DCP custBase.GetServerTypeForIP({ip}) = {__result}");
-        }
-    }
-
-    [HarmonyPatch(typeof(CustomerBase), nameof(CustomerBase.UpdateSpeedOnCustomerBaseApp))]
-    internal static class PatchUpdateSpeedOnApp
-    {
-        private static void Postfix(int appID, float speed)
-        {
-            if (TierConfig.LogPortDetails) MelonLogger.Msg($"DCP custBase.UpdateSpeedOnApp(app={appID}, speed={speed})");
         }
     }
 
