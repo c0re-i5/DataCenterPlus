@@ -7,7 +7,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
 
-[assembly: MelonInfo(typeof(DataCenterPlus.Core), "DataCenterPlus", "1.0.13", "brzb0 + contributors")]
+[assembly: MelonInfo(typeof(DataCenterPlus.Core), "DataCenterPlus", "1.0.14", "brzb0 + contributors")]
 [assembly: MelonGame("Waseku", "Data Center")]
 
 namespace DataCenterPlus
@@ -142,7 +142,7 @@ namespace DataCenterPlus
 
         // Walks a cloned device's CableLink ports; logs them and (optionally) retypes
         // the SFP ports so they accept a given module type. Returns a short summary.
-        internal static void ConfigurePorts(GameObject root, int portSfpType, float portSpeed, string label)
+        internal static void ConfigurePorts(GameObject root, int portSfpType, float portSpeed, string label, bool verbose = true)
         {
             if (root == null) return;
             var links = root.GetComponentsInChildren<CableLink>(true);
@@ -170,7 +170,7 @@ namespace DataCenterPlus
                 if (portSpeed > 0f)
                     TrySet(() => lk.SetConnectionSpeed(portSpeed / TierConfig.SpeedDivisor), "port.connectionSpeed");
             }
-            if (TierConfig.LogPortDetails)
+            if (verbose && TierConfig.LogPortDetails)
                 MelonLogger.Msg($"DataCenterPlus: {label} ports={count} sfpPorts={sfpPorts} retyped={changed} ->{portSfpType}{sample}");
         }
 
@@ -468,17 +468,18 @@ namespace DataCenterPlus
 
             var netSwitch = clone.GetComponent<NetworkSwitch>();
             if (netSwitch != null)
-                TrySet(() => { netSwitch.switchType = entry.CustomId; netSwitch.switchId = entry.DisplayName; }, "net.switchId");
+                TrySet(() => netSwitch.switchType = entry.CustomId, "net.switchType");
 
             // Note: Router.routingTable / asn and Firewall.filterRules / clusterIP are
             // initialised by the game on Awake and their setters vary across game
             // versions, so we deliberately do NOT set them here (avoids MissingMethod).
+            // We also never set switchId — it's the unique network-graph node ID.
             if (entry.Kind == DeviceKind.Router)
             {
                 try
                 {
                     var router = clone.AddComponent<Router>();
-                    TrySet(() => { router.switchType = entry.CustomId; router.switchId = entry.DisplayName; }, "router.switchId");
+                    TrySet(() => router.switchType = entry.CustomId, "router.switchType");
                 }
                 catch (System.Exception e) { MelonLogger.Warning($"DataCenterPlus: AddComponent<Router> failed: {e.Message}"); }
             }
@@ -487,7 +488,7 @@ namespace DataCenterPlus
                 try
                 {
                     var firewall = clone.AddComponent<Firewall>();
-                    TrySet(() => { firewall.switchType = entry.CustomId; firewall.switchId = entry.DisplayName; }, "firewall.switchId");
+                    TrySet(() => firewall.switchType = entry.CustomId, "firewall.switchType");
                 }
                 catch (System.Exception e) { MelonLogger.Warning($"DataCenterPlus: AddComponent<Firewall> failed: {e.Message}"); }
             }

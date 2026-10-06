@@ -196,9 +196,10 @@ namespace DataCenterPlus
             var usable = __instance.GetComponent<UsableObject>();
             if (usable == null) return;
             if (!DeviceRegistry.TryGet(usable.prefabID, out var entry)) return;
-            Core.TrySet(() => __instance.switchId = entry.DisplayName, "switch label");
-            if (__instance.txtScreen != null)
-                Core.TrySet(() => __instance.txtScreen.text = entry.DisplayName, "switch screen text");
+            // IMPORTANT: do NOT touch switchId — it is the unique node ID the network
+            // graph routes by (GetSwitchById / cable endpoints). Overwriting it with a
+            // shared display name desyncs the switch from the graph and kills traffic.
+            // The tier name is shown via the hover tooltip instead.
             // Re-assert port config after the game's Awake/insert logic (ports stay 0/0
             // when empty; the inserted transceiver drives the speed).
             Core.ConfigurePorts(__instance.gameObject, entry.PortSfpType, 0f, $"net {entry.CustomId} (rack)");
@@ -355,7 +356,7 @@ namespace DataCenterPlus
         private static void Postfix(PatchPanel __instance, PatchPanelSaveData saveData)
         {
             if (!TierConfig.RaisePatchPanelCap) return;
-            Core.ConfigurePorts(__instance.gameObject, -1, TierConfig.PatchPanelPortSpeedGbps, "patchpanel (rack)");
+            Core.ConfigurePorts(__instance.gameObject, -1, TierConfig.PatchPanelPortSpeedGbps, "patchpanel (rack)", false);
         }
     }
 
@@ -365,7 +366,7 @@ namespace DataCenterPlus
         private static void Postfix(PatchPanel __instance)
         {
             if (!TierConfig.RaisePatchPanelCap) return;
-            Core.ConfigurePorts(__instance.gameObject, -1, TierConfig.PatchPanelPortSpeedGbps, "patchpanel (awake)");
+            Core.ConfigurePorts(__instance.gameObject, -1, TierConfig.PatchPanelPortSpeedGbps, "patchpanel (awake)", false);
         }
     }
 }
