@@ -287,4 +287,25 @@ namespace DataCenterPlus
             if (tag != null && sfpType == tag.sfpType) __result = true;
         }
     }
+
+    // Raise the per-port rated speed on ALL patch panels so 400G links aren't capped.
+    [HarmonyPatch(typeof(PatchPanel), nameof(PatchPanel.InsertedInRack))]
+    internal static class PatchPatchPanelInserted
+    {
+        private static void Postfix(PatchPanel __instance, PatchPanelSaveData saveData)
+        {
+            if (!TierConfig.RaisePatchPanelCap) return;
+            Core.ConfigurePorts(__instance.gameObject, -1, TierConfig.PatchPanelPortSpeedGbps, "patchpanel (rack)");
+        }
+    }
+
+    [HarmonyPatch(typeof(PatchPanel), nameof(PatchPanel.Awake))]
+    internal static class PatchPatchPanelAwake
+    {
+        private static void Postfix(PatchPanel __instance)
+        {
+            if (!TierConfig.RaisePatchPanelCap) return;
+            Core.ConfigurePorts(__instance.gameObject, -1, TierConfig.PatchPanelPortSpeedGbps, "patchpanel (awake)");
+        }
+    }
 }

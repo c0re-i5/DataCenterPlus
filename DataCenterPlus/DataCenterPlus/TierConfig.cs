@@ -86,6 +86,11 @@ namespace DataCenterPlus
         // while tuning compatibility; set false once things work to reduce log noise.
         internal const bool LogPortDetails = true;
 
+        // Vanilla patch panels cap each port at ~100 Gbps, which bottlenecks 400G links.
+        // When true, every patch panel's ports have their rated speed raised on placement.
+        internal static readonly bool  RaisePatchPanelCap   = true;
+        internal const float PatchPanelPortSpeedGbps = 400f;
+
 
         internal const string ShopSectionName = "HL Mods";
     }
