@@ -30,6 +30,7 @@ namespace DataCenterPlus
             internal float      TargetIops;    // for servers (0 = n/a)
             internal int        ModuleId;      // for SFP boxes: the SFP module type they dispense
             internal int        ShopItemType;  // ObjectInHand value to use for the shop item
+            internal int        PortSfpType;    // SFP type this device's ports should accept (-1 = leave as-is)
         }
 
         private static readonly Dictionary<int, Entry> _entries = new();

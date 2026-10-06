@@ -194,6 +194,8 @@ namespace DataCenterPlus
             Core.TrySet(() => __instance.switchId = entry.DisplayName, "switch label");
             if (__instance.txtScreen != null)
                 Core.TrySet(() => __instance.txtScreen.text = entry.DisplayName, "switch screen text");
+            // Re-assert port types after the game's Awake/insert logic has run.
+            Core.ConfigurePorts(__instance.gameObject, entry.PortSfpType, 0f, $"net {entry.CustomId} (rack)");
         }
     }
 
@@ -207,7 +209,16 @@ namespace DataCenterPlus
     [HarmonyPatch(typeof(Server), nameof(Server.ServerInsertedInRack))]
     internal static class PatchServerInserted
     {
-        private static void Postfix(Server __instance, ServerSaveData serverSaveData) => BoostServer.Apply(__instance);
+        private static void Postfix(Server __instance, ServerSaveData serverSaveData)
+        {
+            BoostServer.Apply(__instance);
+            int id = __instance.serverType;
+            if (DeviceRegistry.TryGet(id, out var e) && e.Kind == DeviceKind.Server)
+            {
+                float portSpeed = TierConfig.ApplyServerPortSpeed ? TierConfig.ServerPortSpeedGbps : 0f;
+                Core.ConfigurePorts(__instance.gameObject, TierConfig.ServerPortSfpType, portSpeed, $"server {id} (rack)");
+            }
+        }
     }
 
     internal static class BoostServer
@@ -249,6 +260,18 @@ namespace DataCenterPlus
             Core.TrySet(() => { module.speed = tag.speed; module.sfpType = tag.sfpType; }, "upgrade pack module");
             var usable = module.GetComponent<UsableObject>();
             if (usable != null) Core.TrySet(() => usable.prefabID = tag.moduleId, "pack module prefabID");
+        }
+    }
+
+    // Let our custom packs accept their own (custom-typed) modules back into the box.
+    [HarmonyPatch(typeof(SFPBox), nameof(SFPBox.CanAcceptSFP))]
+    internal static class PatchCanAcceptSFP
+    {
+        private static void Postfix(SFPBox __instance, int sfpType, ref bool __result)
+        {
+            if (__result) return;
+            var tag = __instance.GetComponent<DcpPackTag>();
+            if (tag != null && sfpType == tag.sfpType) __result = true;
         }
     }
 }

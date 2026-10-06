@@ -67,9 +67,26 @@ namespace DataCenterPlus
             ("Cable fiber QSFP-DD 400G", 3500),
         };
 
-        // --------------------------------------------------------- SHOP PLACEMENT
-        // Name of the shop sub-section to place custom items under (created by the
-        // base game / other mods). Falls back to the main shop list if not found.
+        // ----------------------------------------------- PORT / COMPATIBILITY TUNING
+        // The game gates SFP insertion by integer type match: a cable port only accepts
+        // a module when CableLink.sfpTypeSupported == SFPModule.sfpType. Our modules use
+        // custom type IDs, so the new network devices' ports must be re-typed to accept
+        // them. When true, each new switch/router/firewall has its SFP ports set to
+        // accept ONLY its own tier's transceiver (so tiers are not interchangeable).
+        internal const bool MatchDevicePortsToTier = true;
+
+        // New high-IOPS servers clone a base server, whose onboard ports are low-speed.
+        // When true, the server's ports are bumped so the extra IOPS can actually flow.
+        // Leave the type at -1 to keep the port's SFP type and only raise its speed.
+        internal const bool  ApplyServerPortSpeed = true;
+        internal const float ServerPortSpeedGbps  = 25f;   // onboard port speed for HPC servers
+        internal const int   ServerPortSfpType    = -1;    // -1 = don't change port SFP type
+
+        // Verbose logging of every cloned device's ports (type/speed/flags). Leave on
+        // while tuning compatibility; set false once things work to reduce log noise.
+        internal const bool LogPortDetails = true;
+
+
         internal const string ShopSectionName = "HL Mods";
     }
 

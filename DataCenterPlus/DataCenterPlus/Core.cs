@@ -7,7 +7,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
 
-[assembly: MelonInfo(typeof(DataCenterPlus.Core), "DataCenterPlus", "1.0.5", "brzb0 + contributors")]
+[assembly: MelonInfo(typeof(DataCenterPlus.Core), "DataCenterPlus", "1.0.6", "brzb0 + contributors")]
 [assembly: MelonGame("Waseku", "Data Center")]
 
 namespace DataCenterPlus
@@ -63,19 +63,26 @@ namespace DataCenterPlus
 
         private static int Len(Il2CppReferenceArray<GameObject> a) => a?.Length ?? -1;
 
-        // Returns the index of the first prefab whose name contains `keyword`,
-        // else the first non-null prefab, else -1.
-        private static int PickByName(Il2CppReferenceArray<GameObject> arr, string keyword)
+        // Logs all prefab names in an array (to identify the right clone base), then
+        // returns the first index whose name contains any keyword, else first non-null.
+        private static int PickByName(Il2CppReferenceArray<GameObject> arr, params string[] keywords)
         {
             if (arr == null) return -1;
-            int firstNonNull = -1;
+            int firstNonNull = -1, match = -1;
+            var names = new System.Text.StringBuilder();
             for (int i = 0; i < arr.Length; i++)
             {
                 if (arr[i] == null) continue;
                 if (firstNonNull < 0) firstNonNull = i;
-                if (arr[i].name.ToLowerInvariant().Contains(keyword)) return i;
+                string ln = arr[i].name.ToLowerInvariant();
+                names.Append($" [{i}]{arr[i].name}");
+                if (match < 0)
+                    foreach (var k in keywords)
+                        if (ln.Contains(k)) { match = i; break; }
             }
-            return firstNonNull;
+            if (TierConfig.LogPortDetails)
+                MelonLogger.Msg($"DataCenterPlus: candidates:{names}");
+            return match >= 0 ? match : firstNonNull;
         }
 
         private static void SetupNetworking(MainGameManager mgm)
@@ -96,13 +103,15 @@ namespace DataCenterPlus
             BaseSwitchType = best;
             MelonLogger.Msg($"DataCenterPlus: base switch = '{switches[best].name}' (type {best})");
 
-            // Register switch/router/firewall for each networking tier.
+            // Register switch/router/firewall for each networking tier. Each tier's
+            // ports are set to accept that tier's transceiver (SFP_ID_BASE + t).
             for (int t = 0; t < TierConfig.NetTiers.Length; t++)
             {
                 var tier = TierConfig.NetTiers[t];
-                RegisterNet(DeviceKind.Switch,   DeviceRegistry.SWITCH_ID_BASE   + t, tier, $"Switch {tier.Label}");
-                RegisterNet(DeviceKind.Router,   DeviceRegistry.ROUTER_ID_BASE   + t, tier, $"Router {tier.Label}");
-                RegisterNet(DeviceKind.Firewall, DeviceRegistry.FIREWALL_ID_BASE + t, tier, $"Firewall {tier.Label}");
+                int portType = TierConfig.MatchDevicePortsToTier ? DeviceRegistry.SFP_ID_BASE + t : -1;
+                RegisterNet(DeviceKind.Switch,   DeviceRegistry.SWITCH_ID_BASE   + t, tier, $"Switch {tier.Label}",   portType);
+                RegisterNet(DeviceKind.Router,   DeviceRegistry.ROUTER_ID_BASE   + t, tier, $"Router {tier.Label}",   portType);
+                RegisterNet(DeviceKind.Firewall, DeviceRegistry.FIREWALL_ID_BASE + t, tier, $"Firewall {tier.Label}", portType);
             }
 
             mgm.switchesPrefabs   = ExtendWithTemplates(mgm, mgm.switchesPrefabs,   DeviceKind.Switch);
@@ -110,7 +119,7 @@ namespace DataCenterPlus
             mgm.firewallsPrefabs  = ExtendWithTemplates(mgm, mgm.firewallsPrefabs,  DeviceKind.Firewall);
         }
 
-        private static void RegisterNet(DeviceKind kind, int id, NetTier tier, string name)
+        private static void RegisterNet(DeviceKind kind, int id, NetTier tier, string name, int portSfpType)
         {
             int shopType = kind == DeviceKind.Switch ? (int)PlayerManager.ObjectInHand.Switch
                          : kind == DeviceKind.Router ? (int)PlayerManager.ObjectInHand.Router
@@ -126,8 +135,43 @@ namespace DataCenterPlus
                 IconColor   = tier.Color,
                 SpeedGbps   = tier.SpeedGbps,
                 ShopItemType = shopType,
+                PortSfpType = portSfpType,
                 TargetIops  = 0f,
             });
+        }
+
+        // Walks a cloned device's CableLink ports; logs them and (optionally) retypes
+        // the SFP ports so they accept a given module type. Returns a short summary.
+        internal static void ConfigurePorts(GameObject root, int portSfpType, float portSpeed, string label)
+        {
+            if (root == null) return;
+            var links = root.GetComponentsInChildren<CableLink>(true);
+            if (links == null) return;
+            int count = links.Count, sfpPorts = 0, changed = 0;
+            string sample = "";
+            for (int i = 0; i < links.Count; i++)
+            {
+                var lk = links[i];
+                if (lk == null) continue;
+                bool isSfp = false, isFibre = false; int supported = -999; float spd = -1f;
+                try { isSfp = lk.isSFPPort; } catch { }
+                try { isFibre = lk.isFibrePort; } catch { }
+                try { supported = lk.sfpTypeSupported; } catch { }
+                try { spd = lk.connectionSpeed; } catch { }
+                if (i < 2) sample += $" [p{i}: sfpSup={supported} spd={spd} sfp={isSfp} fib={isFibre}]";
+
+                if (isSfp || isFibre) sfpPorts++;
+
+                // Retype every port (not just flagged ones): on an inactive template the
+                // isSFPPort/isFibrePort flags may not be initialised yet.
+                if (portSfpType >= 0)
+                { TrySet(() => lk.sfpTypeSupported = portSfpType, "port.sfpTypeSupported"); changed++; }
+
+                if (portSpeed > 0f)
+                    TrySet(() => lk.SetConnectionSpeed(portSpeed), "port.connectionSpeed");
+            }
+            if (TierConfig.LogPortDetails)
+                MelonLogger.Msg($"DataCenterPlus: {label} ports={count} sfpPorts={sfpPorts} retyped={changed} ->{portSfpType}{sample}");
         }
 
         private static void SetupServers(MainGameManager mgm)
@@ -219,7 +263,7 @@ namespace DataCenterPlus
             var sfps = mgm.sfpPrefabs;
             if (sfps == null || sfps.Length == 0) return;
 
-            int best = PickByName(sfps, "qsfp");
+            int best = PickByName(sfps, "qsfp", "40");
             if (best < 0) return;
             BaseSfpType = best;
             MelonLogger.Msg($"DataCenterPlus: base SFP = '{sfps[best].name}' (type {best})");
@@ -246,7 +290,7 @@ namespace DataCenterPlus
             // SFP boxes (5-packs) — this is how transceivers are actually sold. We clone
             // a base box (keeps the vanilla fill of 5) and upgrade each module on the way out.
             var boxes = mgm.sfpsBoxedPrefab;
-            int boxBest = PickByName(boxes, "qsfp");
+            int boxBest = PickByName(boxes, "qsfp", "40");
             if (boxBest < 0)
             {
                 MelonLogger.Warning("DataCenterPlus: no base SFP box found; transceiver packs will not be sellable.");
@@ -286,7 +330,7 @@ namespace DataCenterPlus
                 return;
             }
             // Prefer a fiber QSFP cable as the clone base.
-            int best = PickByName(cables, "qsfp");
+            int best = PickByName(cables, "qsfp", "fiber", "40");
             if (best < 0) best = PickByName(cables, "fiber");
             if (best < 0) return;
             BaseCableType = best;
@@ -417,6 +461,9 @@ namespace DataCenterPlus
             var usable = clone.GetComponent<UsableObject>();
             if (usable != null) TrySet(() => usable.prefabID = entry.CustomId, "net.prefabID");
 
+            // Re-type the device's SFP ports so they accept this tier's transceiver.
+            ConfigurePorts(clone, entry.PortSfpType, 0f, $"net {entry.CustomId}");
+
             ApplyTint(clone, entry.Color);
             return clone;
         }
@@ -447,6 +494,11 @@ namespace DataCenterPlus
 
             var usable = clone.GetComponent<UsableObject>();
             if (usable != null) TrySet(() => usable.prefabID = entry.CustomId, "server.prefabID");
+
+            // Log the server's onboard ports and (optionally) raise their speed so the
+            // boosted IOPS can actually flow instead of bottlenecking on a 1GbE port.
+            float portSpeed = TierConfig.ApplyServerPortSpeed ? TierConfig.ServerPortSpeedGbps : 0f;
+            ConfigurePorts(clone, TierConfig.ServerPortSfpType, portSpeed, $"server {entry.CustomId}");
 
             ApplyTint(clone, entry.Color);
             return clone;
