@@ -7,7 +7,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
 
-[assembly: MelonInfo(typeof(DataCenterPlus.Core), "DataCenterPlus", "1.0.9", "brzb0 + contributors")]
+[assembly: MelonInfo(typeof(DataCenterPlus.Core), "DataCenterPlus", "1.0.10", "brzb0 + contributors")]
 [assembly: MelonGame("Waseku", "Data Center")]
 
 namespace DataCenterPlus
@@ -520,7 +520,9 @@ namespace DataCenterPlus
 
             var sfp = clone.GetComponent<SFPModule>();
             if (sfp != null)
-                TrySet(() => { sfp.speed = entry.SpeedGbps / TierConfig.SpeedDivisor; sfp.sfpType = entry.CustomId; }, "sfp.speed");
+                TrySet(() => sfp.speed = entry.SpeedGbps / TierConfig.SpeedDivisor, "sfp.speed");
+            // NB: we deliberately keep the native sfpType (QSFP) so cable/box/port
+            // compatibility works; the tier is identified by prefabID + speed instead.
 
             var usable = clone.GetComponent<UsableObject>();
             if (usable != null) TrySet(() => usable.prefabID = entry.CustomId, "sfp.prefabID");

@@ -247,17 +247,38 @@ namespace DataCenterPlus
     }
 
     // Apply the transceiver's bandwidth to the cable when a custom SFP is inserted.
-    [HarmonyPatch(typeof(CableLink), nameof(CableLink.InsertSFP))]
-    internal static class PatchInsertSFP
+    // The game inserts via SFPModule.InsertedInSFPPort / InsertDirectlyIntoPort (not
+    // always CableLink.InsertSFP), and sets the port speed from the SFP's native
+    // nominal (0 for our custom modules), so we re-assert the tier speed afterwards.
+    internal static class SfpSpeed
     {
-        private static void Postfix(CableLink __instance, float speed, int type, SFPModule module)
+        internal static void Apply(SFPModule module, CableLink link)
         {
-            if (module == null) return;
+            if (module == null || link == null) return;
             var usable = module.GetComponent<UsableObject>();
             if (usable == null) return;
             if (!DeviceRegistry.TryGet(usable.prefabID, out var e) || e.Kind != DeviceKind.Sfp) return;
-            if (e.SpeedGbps > 0f) Core.TrySet(() => __instance.SetConnectionSpeed(e.SpeedGbps / TierConfig.SpeedDivisor), "set link speed");
+            if (e.SpeedGbps > 0f)
+                Core.TrySet(() => link.SetConnectionSpeed(e.SpeedGbps / TierConfig.SpeedDivisor), "insert link speed");
         }
+    }
+
+    [HarmonyPatch(typeof(SFPModule), nameof(SFPModule.InsertedInSFPPort))]
+    internal static class PatchInsertedInSFPPort
+    {
+        private static void Postfix(SFPModule __instance, CableLink _link, bool immediate) => SfpSpeed.Apply(__instance, _link);
+    }
+
+    [HarmonyPatch(typeof(SFPModule), nameof(SFPModule.InsertDirectlyIntoPort))]
+    internal static class PatchInsertDirectlyIntoPort
+    {
+        private static void Postfix(SFPModule __instance, CableLink _link) => SfpSpeed.Apply(__instance, _link);
+    }
+
+    [HarmonyPatch(typeof(CableLink), nameof(CableLink.InsertSFP))]
+    internal static class PatchInsertSFP
+    {
+        private static void Postfix(CableLink __instance, float speed, int type, SFPModule module) => SfpSpeed.Apply(module, __instance);
     }
 
     // Upgrade each module as it's taken out of one of our custom 5-packs.
@@ -270,7 +291,9 @@ namespace DataCenterPlus
             var tag = __instance.GetComponent<DcpPackTag>();
             if (tag == null) return;
             var module = __result;
-            Core.TrySet(() => { module.speed = tag.speed; module.sfpType = tag.sfpType; }, "upgrade pack module");
+            // Keep the native sfpType (QSFP) for compatibility; tag the module via
+            // prefabID + speed so our insert hook recognises it and applies the tier speed.
+            Core.TrySet(() => module.speed = tag.speed, "upgrade pack module speed");
             var usable = module.GetComponent<UsableObject>();
             if (usable != null) Core.TrySet(() => usable.prefabID = tag.moduleId, "pack module prefabID");
         }

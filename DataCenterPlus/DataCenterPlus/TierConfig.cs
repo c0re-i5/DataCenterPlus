@@ -68,12 +68,13 @@ namespace DataCenterPlus
         };
 
         // ----------------------------------------------- PORT / COMPATIBILITY TUNING
-        // The game gates SFP insertion by integer type match: a cable port only accepts
-        // a module when CableLink.sfpTypeSupported == SFPModule.sfpType. Our modules use
-        // custom type IDs, so the new network devices' ports must be re-typed to accept
-        // them. When true, each new switch/router/firewall has its SFP ports set to
-        // accept ONLY its own tier's transceiver (so tiers are not interchangeable).
-        internal const bool MatchDevicePortsToTier = true;
+        // The game gates SFP insertion by integer type match (sfpTypeSupported == sfpType)
+        // AND derives cable compatibility + port speed from that same type via native
+        // tables. Custom type IDs break those native lookups (0/0 speed, "wrong cable").
+        // So we keep the native QSFP type on our modules/ports (realistic: 100G QSFP28
+        // shares the QSFP form factor) and differentiate tiers by speed + name instead.
+        // Set true only to experiment with hard type exclusivity.
+        internal const bool MatchDevicePortsToTier = false;
 
         // New high-IOPS servers clone a base server, whose onboard ports are low-speed.
         // When true, the server's ports are bumped so the extra IOPS can actually flow.
