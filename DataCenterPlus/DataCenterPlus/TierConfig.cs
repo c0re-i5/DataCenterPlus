@@ -110,6 +110,15 @@ namespace DataCenterPlus
         // Position offset (pixels) of the injected button from the screen's Return button.
         internal static readonly Vector2 DispatchButtonOffset = new Vector2(0f, 70f);
 
+        // ------------------------------------------------ CABLE UNPLUG HOLD-TIME
+        // Unplugging a cable is a hold-to-interact "second action" (~2-3s by default).
+        // This scales the hold time on every cable so bulk unplugging is less tedious.
+        // 1.0 = vanilla, 0.25 = quarter the time, 0 = effectively instant. The field(s)
+        // are detected per-cable; set LogPortDetails=true to log the original values.
+        internal static readonly bool  ReduceCableUnplugHold = true;
+        internal const float CableUnplugHoldMultiplier = 0.25f;
+
+
 
 
 

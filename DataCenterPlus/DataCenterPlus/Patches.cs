@@ -348,4 +348,29 @@ namespace DataCenterPlus
             Core.ConfigurePorts(__instance.gameObject, -1, TierConfig.PatchPanelPortSpeedGbps, "patchpanel (awake)", false);
         }
     }
+
+    // Reduce the hold-to-unplug time on cables (a hold "second action", ~2-3s vanilla).
+    [HarmonyPatch(typeof(CableLink), nameof(CableLink.Start))]
+    internal static class PatchCableUnplugHold
+    {
+        private static bool _loggedOnce;
+        private static void Postfix(CableLink __instance)
+        {
+            if (!TierConfig.ReduceCableUnplugHold) return;
+            float m = TierConfig.CableUnplugHoldMultiplier;
+
+            float hd0 = -1f, tfa0 = -1f;
+            Core.TrySet(() => hd0 = __instance.holdDuration, "");
+            Core.TrySet(() => tfa0 = __instance.timeForAction, "");
+
+            if (hd0 > 0f)  Core.TrySet(() => __instance.holdDuration  = hd0  * m, "cable holdDuration");
+            if (tfa0 > 0f) Core.TrySet(() => __instance.timeForAction = tfa0 * m, "cable timeForAction");
+
+            if (!_loggedOnce)
+            {
+                _loggedOnce = true;
+                MelonLogger.Msg($"DataCenterPlus: cable unplug hold x{m} — holdDuration {hd0}->{hd0 * m}, timeForAction {tfa0}->{tfa0 * m}");
+            }
+        }
+    }
 }
